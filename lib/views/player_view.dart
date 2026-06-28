@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/playback_provider.dart';
 import '../services/storage_service.dart';
 import '../models/book.dart';
@@ -74,16 +75,23 @@ class MiniPlayerBar extends StatelessWidget {
                     // 封面
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
-                      child: Image.network(
-                        book.getCoverUrl(baseUrl),
-                        headers: {
+                      child: CachedNetworkImage(
+                        imageUrl: book.getCoverUrl(baseUrl),
+                        httpHeaders: {
                           'User-Agent': userAgent,
                           'Authorization': 'Bearer $token',
                         },
                         width: 38,
                         height: 38,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stack) => Container(
+                        placeholder: (context, url) => const Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
                           width: 38,
                           height: 38,
                           color: colorScheme.surface,
@@ -269,14 +277,17 @@ class _FullPlayerDialogState extends State<FullPlayerDialog> {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: Image.network(
-                          book.getCoverUrl(baseUrl),
-                          headers: {
+                        child: CachedNetworkImage(
+                          imageUrl: book.getCoverUrl(baseUrl),
+                          httpHeaders: {
                             'User-Agent': userAgent,
                             'Authorization': 'Bearer $token',
                           },
                           fit: BoxFit.cover,
-                          errorBuilder: (context, error, stack) => Container(
+                          placeholder: (context, url) => const Center(
+                            child: CircularProgressIndicator(),
+                          ),
+                          errorWidget: (context, url, error) => Container(
                             color: colorScheme.surfaceVariant,
                             child: const Icon(Icons.book, size: 80),
                           ),

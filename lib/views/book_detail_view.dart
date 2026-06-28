@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/library_provider.dart';
 import '../providers/playback_provider.dart';
 import '../services/storage_service.dart';
@@ -77,19 +78,20 @@ class BookDetailView extends StatelessWidget {
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(16),
-                              child: Image.network(
-                                detailedBook.getCoverUrl(baseUrl),
-                                headers: {
+                              child: CachedNetworkImage(
+                                imageUrl: detailedBook.getCoverUrl(baseUrl),
+                                httpHeaders: {
                                   'User-Agent': userAgent,
                                   'Authorization': 'Bearer $token',
                                 },
                                 fit: BoxFit.cover,
-                                errorBuilder: (context, error, stack) {
-                                  return Container(
-                                    color: colorScheme.surfaceVariant,
-                                    child: Icon(Icons.book, size: 80, color: colorScheme.onSurfaceVariant),
-                                  );
-                                },
+                                placeholder: (context, url) => const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                                errorWidget: (context, url, error) => Container(
+                                  color: colorScheme.surfaceVariant,
+                                  child: Icon(Icons.book, size: 80, color: colorScheme.onSurfaceVariant),
+                                ),
                               ),
                             ),
                           ),

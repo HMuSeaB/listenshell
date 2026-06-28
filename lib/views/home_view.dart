@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../constants/app_constants.dart';
 import '../providers/auth_provider.dart';
 import '../providers/library_provider.dart';
@@ -236,27 +237,32 @@ class _HomeViewState extends State<HomeView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 封面图 (伪装 User-Agent 以防封锁)
+            // 封面图 (使用 CachedNetworkImage 并在硬盘上持久缓存，同时伪装 User-Agent)
             Expanded(
               child: Container(
                 width: double.infinity,
                 color: colorScheme.surfaceVariant,
-                child: Image.network(
-                  book.getCoverUrl(baseUrl),
-                  headers: {
+                child: CachedNetworkImage(
+                  imageUrl: book.getCoverUrl(baseUrl),
+                  httpHeaders: {
                     'User-Agent': userAgent,
                     'Authorization': 'Bearer $token',
                   },
                   fit: BoxFit.cover,
-                  errorBuilder: (context, error, stack) {
-                    return Center(
-                      child: Icon(
-                        Icons.book,
-                        size: 48,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                    );
-                  },
+                  placeholder: (context, url) => const Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                  errorWidget: (context, url, error) => Center(
+                    child: Icon(
+                      Icons.book,
+                      size: 48,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ),
               ),
             ),
