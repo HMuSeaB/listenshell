@@ -1,0 +1,34 @@
+import 'package:shared_preferences/shared_preferences.dart';
+import '../constants/app_constants.dart';
+
+class StorageService {
+  final SharedPreferences _prefs;
+
+  StorageService(this._prefs);
+
+  // 获取服务器地址
+  String? getServerUrl() => _prefs.getString(AppConstants.keyServerUrl);
+  Future<bool> setServerUrl(String value) => _prefs.setString(AppConstants.keyServerUrl, value);
+
+  // 获取用户名
+  String? getUsername() => _prefs.getString(AppConstants.keyUsername);
+  Future<bool> setUsername(String value) => _prefs.setString(AppConstants.keyUsername, value);
+
+  // 获取 Token
+  String? getToken() => _prefs.getString(AppConstants.keyToken);
+  Future<bool> setToken(String value) => _prefs.setString(AppConstants.keyToken, value);
+
+  // 获取 User ID
+  String? getUserId() => _prefs.getString(AppConstants.keyUserId);
+  Future<bool> setUserId(String value) => _prefs.setString(AppConstants.keyUserId, value);
+
+  // 获取自定义 User-Agent，若为空则返回默认伪装的 UA
+  String getCustomUA() => _prefs.getString(AppConstants.keyCustomUA) ?? AppConstants.defaultUserAgent;
+  Future<bool> setCustomUA(String value) => _prefs.setString(AppConstants.keyCustomUA, value);
+
+  // 清理登录敏感数据
+  Future<void> clearAuthData() async {
+    await _prefs.remove(AppConstants.keyToken);
+    await _prefs.remove(AppConstants.keyUserId);
+  }
+}
