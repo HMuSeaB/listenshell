@@ -729,23 +729,30 @@ class ApiService {
           if (playlistNode != null) {
             final entryList = playlistNode['entry'] as List<dynamic>? ?? [];
             final chapters = <Chapter>[];
-            final tracks = <String>[];
+            final tracks = <Map<String, dynamic>>[];
             
             double accumulatedDuration = 0.0;
             for (int i = 0; i < entryList.length; i++) {
               final e = entryList[i];
+              if (e is! Map<String, dynamic>) continue;
               final songId = e['id'] as String? ?? '';
               final songTitle = e['title'] as String? ?? '未命名音轨';
               final duration = (e['duration'] as num?)?.toDouble() ?? 0.0;
               final streamUrl = '$baseUrl/rest/stream.view?id=$songId&$queryStr';
 
               chapters.add(Chapter(
-                id: songId,
+                id: i,
                 title: songTitle,
                 start: accumulatedDuration,
                 end: accumulatedDuration + duration,
+                audioUrl: streamUrl,
               ));
-              tracks.add(streamUrl);
+              tracks.add({
+                'id': songId,
+                'title': songTitle,
+                'duration': duration,
+                'contentUrl': streamUrl,
+              });
               accumulatedDuration += duration;
             }
 
