@@ -9,6 +9,7 @@ import '../services/storage_service.dart';
 import '../models/book.dart';
 import 'book_detail_view.dart';
 import 'player_view.dart';
+import 'debug_logs_dialog.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -404,6 +405,19 @@ class _HomeViewState extends State<HomeView> {
                     title: const Text('客户端内核'),
                     subtitle: const Text('Flutter M3 + mpv Engine (media_kit)'),
                     contentPadding: EdgeInsets.zero,
+                  ),
+                  const Divider(),
+                  ListTile(
+                    title: const Text('调试日志'),
+                    subtitle: const Text('查看应用运行诊断与网络响应日志'),
+                    trailing: const Icon(Icons.chevron_right),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (ctx) => const DebugLogsDialog(),
+                      );
+                    },
                   ),
                 ],
               ),

@@ -6,6 +6,7 @@ import 'package:xml/xml.dart';
 import 'storage_service.dart';
 import '../models/book.dart';
 import '../models/chapter.dart';
+import 'log_collector.dart';
 
 class ApiService {
   final StorageService _storageService;
@@ -138,12 +139,14 @@ class ApiService {
       final baseUrl = _formatUrl(rawUrl);
       final params = _buildSubsonicParams(username, password);
       
-      developer.log('Attempting Subsonic ping to: $baseUrl/rest/ping.view', name: 'ApiService');
+      LogCollector.instance.log('Attempting Subsonic ping to: $baseUrl/rest/ping.view, u=$username');
 
       final response = await _dio.get(
         '$baseUrl/rest/ping.view',
         queryParameters: params,
       );
+
+      LogCollector.instance.log('Subsonic ping response: status=${response.statusCode}, body=${response.data}');
 
       if (response.statusCode == 200 && response.data != null) {
         final data = response.data;
@@ -153,15 +156,18 @@ class ApiService {
           await _storageService.setServerUrl(baseUrl);
           await _storageService.setUsername(username);
           await _storageService.setToken('subsonic_$password');
+          LogCollector.instance.log('Subsonic login successful for u=$username');
           return {
             'success': true,
             'url': baseUrl,
           };
+        } else {
+          LogCollector.instance.log('Subsonic ping status was not ok: $responseObj');
         }
       }
       return {'success': false, 'message': '验证失败：请检查账号密码或服务器版本'};
     } catch (e) {
-      developer.log('Ping Subsonic failed', error: e, name: 'ApiService');
+      LogCollector.instance.log('Ping Subsonic failed', error: e);
       String errMsg = '连接服务器失败，请检查地址是否正确';
       if (e is DioException) {
         if (e.response != null) {
@@ -240,8 +246,10 @@ class ApiService {
       if (baseUrl == null) throw Exception('Server URL not configured');
 
       if (isSubsonicMode) {
+        LogCollector.instance.log('Subsonic mode: fetching album list via getAlbumList2.view');
         // 请求 Subsonic 专辑列表做为书籍列表
         final response = await _dio.get('$baseUrl/rest/getAlbumList2.view?type=alphabetical&size=500');
+        LogCollector.instance.log('Subsonic getAlbumList2 response: status=${response.statusCode}, body=${response.data}');
         if (response.statusCode == 200 && response.data != null) {
           final responseObj = response.data['subsonic-response'] as Map<String, dynamic>?;
           if (responseObj != null && responseObj['status'] == 'ok') {
@@ -271,8 +279,13 @@ class ApiService {
                   ));
                 }
               }
+              LogCollector.instance.log('Successfully parsed Subsonic albums count: ${books.length}');
               return books;
+            } else {
+              LogCollector.instance.log('Subsonic albumList2 or album element is null: $albumList');
             }
+          } else {
+            LogCollector.instance.log('Subsonic response status not ok or responseObj is null: $responseObj');
           }
         }
         return [];
@@ -314,8 +327,10 @@ class ApiService {
       }
 
       if (isSubsonicMode) {
+        LogCollector.instance.log('Subsonic mode: fetching album details for id=$bookId');
         // 请求 Subsonic 专辑歌曲详情并转化为 Chapter 列表
         final response = await _dio.get('$baseUrl/rest/getAlbum.view?id=$bookId');
+        LogCollector.instance.log('Subsonic getAlbum response: status=${response.statusCode}, body=${response.data}');
         if (response.statusCode == 200 && response.data != null) {
           final responseObj = response.data['subsonic-response'] as Map<String, dynamic>?;
           if (responseObj != null && responseObj['status'] == 'ok') {
@@ -350,6 +365,8 @@ class ApiService {
                   ? '$baseUrl/rest/getCoverArt.view?id=$coverArtId&$queryStr'
                   : null;
 
+              LogCollector.instance.log('Successfully parsed Subsonic album details, songs count: ${chaptersList.length}');
+
               return Book(
                 id: bookId,
                 title: albumObj['name'] as String? ?? '未知专辑',
@@ -362,7 +379,11 @@ class ApiService {
                 isRss: true,
                 rssCoverUrl: coverUrl,
               );
+            } else {
+              LogCollector.instance.log('Subsonic album element is null: $albumObj');
             }
+          } else {
+            LogCollector.instance.log('Subsonic response status not ok or responseObj is null: $responseObj');
           }
         }
         return null;
@@ -444,7 +465,7 @@ class ApiService {
   // 免密 RSS 订阅源 XML 数据流解析逻辑
   Future<Book?> parseRssFeed(String feedUrl) async {
     try {
-      developer.log('Fetching RSS Feed from: $feedUrl', name: 'ApiService');
+      LogCollector.instance.log('Starting RSS Feed fetch from: $feedUrl');
       
       // 显式指定以纯文本格式拉取 XML，防止 Dio 底层错误解析
       final response = await _dio.get(
@@ -452,6 +473,8 @@ class ApiService {
         options: Options(responseType: ResponseType.plain),
       );
       
+      LogCollector.instance.log('RSS fetch response status: ${response.statusCode}, payload length: ${response.data?.toString().length ?? 0}');
+
       if (response.statusCode != 200 || response.data == null) {
         throw Exception('获取 RSS 失败，状态码: ${response.statusCode}');
       }
@@ -529,6 +552,8 @@ class ApiService {
         throw Exception('解析完成，但未提取到任何章节音轨');
       }
 
+      LogCollector.instance.log('Successfully parsed RSS book: $title, chapters count: ${chaptersList.length}');
+
       return Book(
         id: 'rss_${feedUrl.hashCode}',
         title: title,
@@ -542,7 +567,7 @@ class ApiService {
         rssCoverUrl: coverUrl,
       );
     } catch (e, stack) {
-      developer.log('Parse RSS Feed failed', error: e, stackTrace: stack, name: 'ApiService');
+      LogCollector.instance.log('Parse RSS Feed failed', error: e, stackTrace: stack);
       return null;
     }
   }
