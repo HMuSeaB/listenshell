@@ -247,8 +247,8 @@ class ApiService {
 
       if (isSubsonicMode) {
         LogCollector.instance.log('Subsonic mode: fetching album list via getAlbumList2.view');
-        // 请求 Subsonic 专辑列表做为书籍列表
-        final response = await _dio.get('$baseUrl/rest/getAlbumList2.view?type=alphabetical&size=500');
+        // 请求 Subsonic 专辑列表做为书籍列表 (使用 newest 兼容所有 subsonic 音乐服)
+        final response = await _dio.get('$baseUrl/rest/getAlbumList2.view?type=newest&size=500');
         LogCollector.instance.log('Subsonic getAlbumList2 response: status=${response.statusCode}, body=${response.data}');
         if (response.statusCode == 200 && response.data != null) {
           final responseObj = response.data['subsonic-response'] as Map<String, dynamic>?;
