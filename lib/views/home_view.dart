@@ -276,10 +276,10 @@ class _HomeViewState extends State<HomeView> {
       borderRadius: BorderRadius.circular(12),
       child: Card(
         elevation: 0,
-        color: colorScheme.surfaceVariant.withOpacity(0.2),
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.3)),
+          side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -289,7 +289,7 @@ class _HomeViewState extends State<HomeView> {
             Expanded(
               child: Container(
                 width: double.infinity,
-                color: colorScheme.surfaceVariant,
+                color: colorScheme.surfaceContainerHighest,
                 child: CachedNetworkImage(
                   imageUrl: book.getCoverUrl(baseUrl),
                   httpHeaders: {
@@ -367,7 +367,7 @@ class _HomeViewState extends State<HomeView> {
           Card(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.3)),
+              side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -425,7 +425,7 @@ class _HomeViewState extends State<HomeView> {
           Card(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.3)),
+              side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -489,7 +489,7 @@ class _HomeViewState extends State<HomeView> {
           Card(
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.3)),
+              side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
             ),
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -676,7 +676,7 @@ class _HomeViewState extends State<HomeView> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                               side: BorderSide(
-                                color: colorScheme.outlineVariant.withOpacity(0.3),
+                                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
                               ),
                             ),
                             child: InkWell(
@@ -699,7 +699,7 @@ class _HomeViewState extends State<HomeView> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     CircleAvatar(
-                                      backgroundColor: colorScheme.primary.withOpacity(0.1),
+                                      backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
                                       child: Text(
                                         name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
                                         style: TextStyle(
@@ -777,12 +777,12 @@ class _HomeViewState extends State<HomeView> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                               side: BorderSide(
-                                color: colorScheme.outlineVariant.withOpacity(0.3),
+                                color: colorScheme.outlineVariant.withValues(alpha: 0.3),
                               ),
                             ),
                             child: ListTile(
                               leading: CircleAvatar(
-                                backgroundColor: colorScheme.secondary.withOpacity(0.1),
+                                backgroundColor: colorScheme.secondary.withValues(alpha: 0.1),
                                 child: Icon(Icons.queue_music, color: colorScheme.secondary),
                               ),
                               title: Text(
@@ -792,6 +792,9 @@ class _HomeViewState extends State<HomeView> {
                               subtitle: Text('共 $count 首歌曲 • 总播放时长: $durationStr'),
                               trailing: const Icon(Icons.chevron_right),
                               onTap: () async {
+                                final navigator = Navigator.of(context);
+                                final scaffoldMessenger = ScaffoldMessenger.of(context);
+
                                 showDialog(
                                   context: context,
                                   barrierDismissible: false,
@@ -799,21 +802,20 @@ class _HomeViewState extends State<HomeView> {
                                 );
                                 
                                 final virtualBook = await libProvider.fetchPlaylistTracksAsBook(id, name);
-                                if (mounted) {
-                                  Navigator.pop(context); // 关闭加载弹窗
-                                  if (virtualBook != null) {
-                                    // 完美无缝跳转到书籍详情页进行章节化播放！
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (ctx) => BookDetailView(book: virtualBook),
-                                      ),
-                                    );
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('歌单数据加载失败')),
-                                    );
-                                  }
+                                if (!mounted) return;
+                                
+                                navigator.pop(); // 关闭加载弹窗
+                                if (virtualBook != null) {
+                                  // 完美无缝跳转到书籍详情页进行章节化播放！
+                                  navigator.push(
+                                    MaterialPageRoute(
+                                      builder: (ctx) => BookDetailView(book: virtualBook),
+                                    ),
+                                  );
+                                } else {
+                                  scaffoldMessenger.showSnackBar(
+                                    const SnackBar(content: Text('歌单数据加载失败')),
+                                  );
                                 }
                               },
                             ),
@@ -917,10 +919,10 @@ class _HomeViewState extends State<HomeView> {
   }) {
     return Card(
       elevation: 0,
-      color: color.withOpacity(0.08),
+      color: color.withValues(alpha: 0.08),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: color.withOpacity(0.25), width: 1.5),
+        side: BorderSide(color: color.withValues(alpha: 0.25), width: 1.5),
       ),
       child: InkWell(
         onTap: onTap,
@@ -930,7 +932,7 @@ class _HomeViewState extends State<HomeView> {
           child: Row(
             children: [
               CircleAvatar(
-                backgroundColor: color.withOpacity(0.15),
+                backgroundColor: color.withValues(alpha: 0.15),
                 radius: 22,
                 child: Icon(icon, color: color, size: 24),
               ),
@@ -945,7 +947,7 @@ class _HomeViewState extends State<HomeView> {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.bold,
-                        color: color.withOpacity(0.9),
+                        color: color.withValues(alpha: 0.9),
                       ),
                     ),
                     const SizedBox(height: 2),

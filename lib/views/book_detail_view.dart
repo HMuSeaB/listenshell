@@ -5,7 +5,6 @@ import '../providers/library_provider.dart';
 import '../providers/playback_provider.dart';
 import '../services/storage_service.dart';
 import '../models/book.dart';
-import '../models/chapter.dart';
 import 'player_view.dart';
 
 class BookDetailView extends StatelessWidget {
@@ -20,9 +19,9 @@ class BookDetailView extends StatelessWidget {
     final int s = (seconds % 60).floor();
     
     if (h > 0) {
-      return '${h}小时${m}分钟';
+      return '$h小时$m分钟';
     }
-    return '${m}分钟${s}秒';
+    return '$m分钟$s秒';
   }
 
   @override
@@ -74,7 +73,7 @@ class BookDetailView extends StatelessWidget {
                                     borderRadius: BorderRadius.circular(16),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: Colors.black.withOpacity(0.2),
+                                        color: Colors.black.withValues(alpha: 0.2),
                                         blurRadius: 15,
                                         offset: const Offset(0, 8),
                                       )
@@ -93,7 +92,7 @@ class BookDetailView extends StatelessWidget {
                                         child: CircularProgressIndicator(),
                                       ),
                                       errorWidget: (context, url, error) => Container(
-                                        color: colorScheme.surfaceVariant,
+                                        color: colorScheme.surfaceContainerHighest,
                                         child: Icon(Icons.book, size: 80, color: colorScheme.onSurfaceVariant),
                                       ),
                                     ),

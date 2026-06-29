@@ -52,9 +52,9 @@ class MiniPlayerBar extends StatelessWidget {
       child: Container(
         height: 64,
         decoration: BoxDecoration(
-          color: colorScheme.surfaceVariant.withOpacity(0.9),
+          color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.9),
           border: Border(
-            top: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.5)),
+            top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
           ),
         ),
         child: Column(
@@ -245,7 +245,7 @@ class _PlayerMainPanelState extends State<PlayerMainPanel> {
           child: Container(
             padding: const EdgeInsets.all(40),
             decoration: BoxDecoration(
-              color: colorScheme.surfaceVariant.withOpacity(0.15),
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.15),
             ),
             child: Center(
               child: AspectRatio(
@@ -255,7 +255,7 @@ class _PlayerMainPanelState extends State<PlayerMainPanel> {
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         blurRadius: 20,
                         offset: const Offset(0, 10),
                       )
@@ -274,7 +274,7 @@ class _PlayerMainPanelState extends State<PlayerMainPanel> {
                         child: CircularProgressIndicator(),
                       ),
                       errorWidget: (context, url, error) => Container(
-                        color: colorScheme.surfaceVariant,
+                        color: colorScheme.surfaceContainerHighest,
                         child: const Icon(Icons.book, size: 80),
                       ),
                     ),
@@ -326,7 +326,7 @@ class _PlayerMainPanelState extends State<PlayerMainPanel> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer.withOpacity(0.3),
+                    color: colorScheme.primaryContainer.withValues(alpha: 0.3),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
@@ -472,9 +472,9 @@ class FullPlayerDialog extends StatelessWidget {
         width: 800,
         height: 600,
         decoration: BoxDecoration(
-          color: colorScheme.surface.withOpacity(0.95),
+          color: colorScheme.surface.withValues(alpha: 0.95),
           borderRadius: BorderRadius.circular(28),
-          border: Border.all(color: colorScheme.outlineVariant.withOpacity(0.3)),
+          border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.3)),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(28),
@@ -502,13 +502,13 @@ class PlayerPageView extends StatelessWidget {
             Icon(
               Icons.play_circle_outline,
               size: 64,
-              color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 16),
             Text(
               '当前暂无播放内容',
               style: TextStyle(
-                color: colorScheme.onSurfaceVariant.withOpacity(0.7),
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
               ),
@@ -517,7 +517,7 @@ class PlayerPageView extends StatelessWidget {
             Text(
               '请在“书架”或“歌单”中选择曲目开始收听',
               style: TextStyle(
-                color: colorScheme.onSurfaceVariant.withOpacity(0.5),
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
                 fontSize: 13,
               ),
             ),
@@ -535,10 +535,10 @@ class PlayerPageView extends StatelessWidget {
               constraints: const BoxConstraints(maxWidth: 860, maxHeight: 600),
               child: Container(
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withOpacity(0.2),
+                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(28),
                   border: Border.all(
-                    color: colorScheme.outlineVariant.withOpacity(0.3),
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.3),
                   ),
                 ),
                 child: ClipRRect(
