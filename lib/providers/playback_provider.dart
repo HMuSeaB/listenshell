@@ -56,7 +56,8 @@ class PlaybackProvider extends ChangeNotifier {
       }
       _lastPosition = pos;
 
-      if (_currentBook!.isRss) {
+      final isMulti = _currentBook!.isRss || _apiService.isSubsonicMode;
+      if (isMulti) {
         if (_currentChapter == null) return;
         // RSS 模式：绝对进度 = 章节起始绝对时间 + 播放器内相对时间
         final absSeconds = (_currentChapter!.start + pos.inSeconds).toInt();
@@ -77,7 +78,8 @@ class PlaybackProvider extends ChangeNotifier {
 
     // 监听音频总时长改变
     _durSub = _audioService.durationStream.listen((dur) {
-      if (_currentBook != null && _currentBook!.isRss) {
+      final isMulti = _currentBook?.isRss == true || _apiService.isSubsonicMode;
+      if (isMulti && _currentBook != null) {
         // RSS 模式下整本书总长度暴露为 book.duration
         _duration = Duration(seconds: _currentBook!.duration.toInt());
       } else {
@@ -127,13 +129,13 @@ class PlaybackProvider extends ChangeNotifier {
     }
   }
 
-  // 自动切入下一章节 (仅限 RSS 模式)
+  // 自动切入下一章节 (仅限 RSS/Subsonic 模式)
   Future<void> _playNextRssChapter() async {
     if (_currentBook == null || _currentChapter == null) return;
     final nextIndex = _currentChapter!.id + 1;
     if (nextIndex < _currentBook!.chapters.length) {
       final nextChapter = _currentBook!.chapters[nextIndex];
-      developer.log('Auto switching to next RSS chapter: ${nextChapter.title}', name: 'PlaybackProvider');
+      developer.log('Auto switching to next RSS/Subsonic chapter: ${nextChapter.title}', name: 'PlaybackProvider');
       await _playRssChapter(nextChapter, startFromChapterRelativeSeconds: 0.0);
     } else {
       // 播放完了整本书，停下
@@ -141,7 +143,7 @@ class PlaybackProvider extends ChangeNotifier {
     }
   }
 
-  // 内部辅助播放 RSS 章节方法
+  // 内部辅助播放 RSS/Subsonic 章节方法
   Future<void> _playRssChapter(Chapter chapter, {required double startFromChapterRelativeSeconds}) async {
     _isLoading = true;
     _currentChapter = chapter;
@@ -150,7 +152,7 @@ class PlaybackProvider extends ChangeNotifier {
     try {
       final streamUrl = chapter.audioUrl;
       if (streamUrl == null || streamUrl.isEmpty) {
-        throw Exception('RSS 章节播放流地址为空');
+        throw Exception('直连播放流地址为空');
       }
 
       final userAgent = _storageService.getCustomUA();
@@ -165,7 +167,7 @@ class PlaybackProvider extends ChangeNotifier {
       _position = Duration(seconds: (chapter.start + startFromChapterRelativeSeconds).toInt());
       await _storageService.setBookProgress(_currentBook!.id, _position.inSeconds.toDouble());
     } catch (e) {
-      developer.log('Play RSS chapter failed', error: e, name: 'PlaybackProvider');
+      developer.log('Play RSS/Subsonic chapter failed', error: e, name: 'PlaybackProvider');
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -184,7 +186,8 @@ class PlaybackProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      if (book.isRss) {
+      final isMulti = book.isRss || _apiService.isSubsonicMode;
+      if (isMulti) {
         // RSS 免密直连模式
         _sessionId = 'rss_session';
         _duration = Duration(seconds: book.duration.toInt());
@@ -265,7 +268,8 @@ class PlaybackProvider extends ChangeNotifier {
   Future<void> seek(Duration pos) async {
     _lastPosition = pos; // 避免把 Seek 造成的进度跃变计入收听时间
     
-    if (_currentBook != null && _currentBook!.isRss) {
+    final isMulti = _currentBook?.isRss == true || _apiService.isSubsonicMode;
+    if (isMulti) {
       final absSeconds = pos.inSeconds.toDouble();
       
       // 查找对应章节
@@ -303,7 +307,8 @@ class PlaybackProvider extends ChangeNotifier {
 
   // 跳转到指定章节播放
   Future<void> playChapter(Chapter chapter) async {
-    if (_currentBook != null && _currentBook!.isRss) {
+    final isMulti = _currentBook?.isRss == true || _apiService.isSubsonicMode;
+    if (isMulti) {
       await _playRssChapter(chapter, startFromChapterRelativeSeconds: 0.0);
     } else {
       await seek(Duration(seconds: chapter.start.toInt()));
@@ -330,8 +335,9 @@ class PlaybackProvider extends ChangeNotifier {
 
     final curTime = _position.inSeconds.toDouble();
     
-    // 如果是 RSS 模式，将当前进度存入本地缓存并返回
-    if (_currentBook != null && _currentBook!.isRss) {
+    // 如果是 RSS/Subsonic 模式，将当前进度存入本地缓存并返回
+    final isMulti = _currentBook?.isRss == true || _apiService.isSubsonicMode;
+    if (isMulti) {
       _accumulatedTimeListened = 0.0;
       await _storageService.setBookProgress(bookId, curTime);
       developer.log('Synced RSS local progress: ${curTime}s', name: 'PlaybackProvider');

@@ -32,6 +32,12 @@ class LibraryProvider extends ChangeNotifier {
         ];
         _selectedLibrary = _libraries.first;
         await selectLibrary(_selectedLibrary!);
+      } else if (_apiService.isSubsonicMode) {
+        _libraries = [
+          {'id': 'subsonic_library', 'name': 'Navidrome 音乐库'}
+        ];
+        _selectedLibrary = _libraries.first;
+        await selectLibrary(_selectedLibrary!);
       } else {
         _libraries = await _apiService.getLibraries();
         if (_libraries.isNotEmpty && _selectedLibrary == null) {

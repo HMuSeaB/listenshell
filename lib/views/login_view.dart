@@ -18,7 +18,7 @@ class _LoginViewState extends State<LoginView> {
   final _passwordController = TextEditingController();
   final _uaController = TextEditingController();
 
-  bool _isRssMode = false;
+  int _loginTab = 0; // 0: ABS, 1: RSS, 2: Navidrome
   bool _useHttps = true;
   bool _showPassword = false;
   bool _showAdvanced = false;
@@ -32,16 +32,26 @@ class _LoginViewState extends State<LoginView> {
     final savedUrl = auth.serverUrl ?? '';
     final savedUsername = auth.username ?? '';
 
-    _isRssMode = savedUrl.contains('/feed/') || savedUsername == 'RSS免密订阅';
-
-    if (savedUrl.isNotEmpty) {
-      if (_isRssMode) {
-        _hostController.text = savedUrl;
+    if (auth.isRssMode) {
+      _loginTab = 1;
+      _hostController.text = savedUrl;
+    } else if (auth.isSubsonicMode) {
+      _loginTab = 2;
+      _useHttps = savedUrl.startsWith('https://');
+      var cleanHost = savedUrl.replaceFirst('https://', '').replaceFirst('http://', '');
+      if (cleanHost.contains(':')) {
+        final parts = cleanHost.split(':');
+        _hostController.text = parts[0];
+        _portController.text = parts[1];
       } else {
+        _hostController.text = cleanHost;
+      }
+      _usernameController.text = savedUsername;
+    } else {
+      _loginTab = 0;
+      if (savedUrl.isNotEmpty) {
         _useHttps = savedUrl.startsWith('https://');
         var cleanHost = savedUrl.replaceFirst('https://', '').replaceFirst('http://', '');
-        
-        // 提取端口
         if (cleanHost.contains(':')) {
           final parts = cleanHost.split(':');
           _hostController.text = parts[0];
@@ -50,9 +60,6 @@ class _LoginViewState extends State<LoginView> {
           _hostController.text = cleanHost;
         }
       }
-    }
-    
-    if (!_isRssMode) {
       _usernameController.text = savedUsername;
     }
     
@@ -83,7 +90,7 @@ class _LoginViewState extends State<LoginView> {
   // 拼接得到完整地址
   String _buildFullUrl() {
     var host = _hostController.text.trim();
-    if (_isRssMode) {
+    if (_loginTab == 1) {
       if (!host.startsWith('http://') && !host.startsWith('https://')) {
         return 'http://$host';
       }
@@ -113,8 +120,14 @@ class _LoginViewState extends State<LoginView> {
     final fullUrl = _buildFullUrl();
     
     bool success;
-    if (_isRssMode) {
+    if (_loginTab == 1) {
       success = await auth.loginRss(fullUrl);
+    } else if (_loginTab == 2) {
+      success = await auth.loginSubsonic(
+        fullUrl,
+        _usernameController.text.trim(),
+        _passwordController.text,
+      );
     } else {
       success = await auth.login(
         fullUrl,
@@ -125,7 +138,7 @@ class _LoginViewState extends State<LoginView> {
 
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_isRssMode ? '订阅源连接成功！' : '登录成功！')),
+        SnackBar(content: Text(_loginTab == 1 ? '订阅源连接成功！' : '登录成功！')),
       );
     }
   }
@@ -187,7 +200,7 @@ class _LoginViewState extends State<LoginView> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          '高性能 Audiobookshelf 电脑客户端',
+                          '高性能有声书电脑客户端',
                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                               ),
@@ -197,29 +210,41 @@ class _LoginViewState extends State<LoginView> {
                   ),
                   const SizedBox(height: 24),
 
-                  // 登录模式切换 Tab
+                  // 登录模式切换 Tab ChoiceChips
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       ChoiceChip(
-                        label: const Text('标准登录 (ABS)'),
-                        selected: !_isRssMode,
+                        label: const Text('标准 (ABS)'),
+                        selected: _loginTab == 0,
                         onSelected: (selected) {
                           if (selected) {
                             setState(() {
-                              _isRssMode = false;
+                              _loginTab = 0;
                             });
                           }
                         },
                       ),
-                      const SizedBox(width: 16),
+                      const SizedBox(width: 8),
                       ChoiceChip(
-                        label: const Text('RSS 订阅直接播放'),
-                        selected: _isRssMode,
+                        label: const Text('RSS 订阅'),
+                        selected: _loginTab == 1,
                         onSelected: (selected) {
                           if (selected) {
                             setState(() {
-                              _isRssMode = true;
+                              _loginTab = 1;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Navidrome'),
+                        selected: _loginTab == 2,
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              _loginTab = 2;
                             });
                           }
                         },
@@ -230,7 +255,7 @@ class _LoginViewState extends State<LoginView> {
 
                   // 服务器配置
                   Text(
-                    _isRssMode ? '订阅源配置' : '服务器连接',
+                    _loginTab == 1 ? '订阅源配置' : '服务器连接',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -243,10 +268,10 @@ class _LoginViewState extends State<LoginView> {
                         child: TextFormField(
                           controller: _hostController,
                           decoration: InputDecoration(
-                            labelText: _isRssMode ? 'RSS 订阅链接' : '主机地址 (Host)',
-                            hintText: _isRssMode 
+                            labelText: _loginTab == 1 ? 'RSS 订阅链接' : '主机地址 (Host)',
+                            hintText: _loginTab == 1 
                                 ? '例如 http://.../feed/f8face...'
-                                : '如: 192.168.1.100 或 abs.com',
+                                : '如: 192.168.1.100 或 nd.com',
                             border: const OutlineInputBorder(),
                             prefixIcon: const Icon(Icons.dns),
                           ),
@@ -254,7 +279,7 @@ class _LoginViewState extends State<LoginView> {
                               (value == null || value.trim().isEmpty) ? '请输入地址' : null,
                         ),
                       ),
-                      if (!_isRssMode) ...[
+                      if (_loginTab != 1) ...[
                         const SizedBox(width: 12),
                         Expanded(
                           flex: 1,
@@ -273,7 +298,7 @@ class _LoginViewState extends State<LoginView> {
                   ),
                   const SizedBox(height: 12),
 
-                  if (!_isRssMode) ...[
+                  if (_loginTab != 1) ...[
                     // HTTPS 切换
                     SwitchListTile(
                       title: const Text('启用安全连接 (HTTPS)'),
@@ -289,7 +314,7 @@ class _LoginViewState extends State<LoginView> {
                     const Divider(height: 24),
                   ],
 
-                  if (!_isRssMode) ...[
+                  if (_loginTab != 1) ...[
                     // 用户凭据
                     Text(
                       '登录凭据',
@@ -441,7 +466,7 @@ class _LoginViewState extends State<LoginView> {
                       child: auth.isLoading
                           ? const CircularProgressIndicator(color: Colors.white)
                           : Text(
-                              _isRssMode ? '解析并播放' : '连接并登录',
+                              _loginTab == 1 ? '解析并播放' : '连接并登录',
                               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                     ),

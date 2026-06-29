@@ -21,6 +21,8 @@ class AuthProvider extends ChangeNotifier {
   String? get serverUrl => _storageService.getServerUrl();
   String? get username => _storageService.getUsername();
   String get customUA => _storageService.getCustomUA();
+  bool get isSubsonicMode => _apiService.isSubsonicMode;
+  bool get isRssMode => _apiService.isRssMode;
 
   // 初始化，尝试使用本地保存的 Token 自动登录
   Future<void> tryAutoLogin() async {
@@ -95,6 +97,28 @@ class AuthProvider extends ChangeNotifier {
       _isLoading = false;
       _isAuthenticated = false;
       _errorMessage = '连接失败: 地址未响应或格式有误';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // 执行 Subsonic / Navidrome 登录
+  Future<bool> loginSubsonic(String url, String username, String password) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    final result = await _apiService.loginSubsonic(url, username, password);
+    _isLoading = false;
+
+    if (result != null && result['success'] == true) {
+      _isAuthenticated = true;
+      _errorMessage = null;
+      notifyListeners();
+      return true;
+    } else {
+      _isAuthenticated = false;
+      _errorMessage = result?['message'] ?? '登录验证失败';
       notifyListeners();
       return false;
     }

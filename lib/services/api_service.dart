@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:developer' as developer;
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:xml/xml.dart';
 import 'storage_service.dart';
@@ -10,6 +12,7 @@ class ApiService {
   late final Dio _dio;
 
   bool get isRssMode => _storageService.getToken() == 'rss_token';
+  bool get isSubsonicMode => _storageService.getToken()?.startsWith('subsonic_') == true;
   String? get currentUrl => _storageService.getServerUrl();
 
   ApiService(this._storageService) {
@@ -25,10 +28,21 @@ class ApiService {
         final userAgent = _storageService.getCustomUA();
         options.headers['User-Agent'] = userAgent;
 
-        // 注入 Token 认证信息
-        final token = _storageService.getToken();
-        if (token != null && token.isNotEmpty) {
-          options.headers['Authorization'] = 'Bearer $token';
+        if (isSubsonicMode) {
+          // Subsonic 模式：动态添加 query 鉴权参数，不使用 Authorization header
+          final token = _storageService.getToken() ?? '';
+          if (token.startsWith('subsonic_')) {
+            final password = token.substring(9);
+            final username = _storageService.getUsername() ?? '';
+            final params = _buildSubsonicParams(username, password);
+            options.queryParameters.addAll(params);
+          }
+        } else {
+          // 注入 ABS Token 认证信息
+          final token = _storageService.getToken();
+          if (token != null && token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
         }
 
         developer.log('Request to: ${options.uri}', name: 'ApiService');
@@ -118,11 +132,88 @@ class ApiService {
     }
   }
 
+  // 执行 Subsonic / Navidrome 登录鉴权
+  Future<Map<String, dynamic>?> loginSubsonic(String rawUrl, String username, String password) async {
+    try {
+      final baseUrl = _formatUrl(rawUrl);
+      final params = _buildSubsonicParams(username, password);
+      
+      developer.log('Attempting Subsonic ping to: $baseUrl/rest/ping.view', name: 'ApiService');
+
+      final response = await _dio.get(
+        '$baseUrl/rest/ping.view',
+        queryParameters: params,
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data;
+        final responseObj = data['subsonic-response'] as Map<String, dynamic>?;
+        if (responseObj != null && responseObj['status'] == 'ok') {
+          // 校验成功，写入本地持久化。密码带上 "subsonic_" 前缀存入 token 字段
+          await _storageService.setServerUrl(baseUrl);
+          await _storageService.setUsername(username);
+          await _storageService.setToken('subsonic_$password');
+          return {
+            'success': true,
+            'url': baseUrl,
+          };
+        }
+      }
+      return {'success': false, 'message': '验证失败：请检查账号密码或服务器版本'};
+    } catch (e) {
+      developer.log('Ping Subsonic failed', error: e, name: 'ApiService');
+      String errMsg = '连接服务器失败，请检查地址是否正确';
+      if (e is DioException) {
+        if (e.response != null) {
+          errMsg = '服务器错误 (${e.response?.statusCode})';
+        } else {
+          errMsg = '连接超时或无法触达服务器';
+        }
+      }
+      return {'success': false, 'message': errMsg};
+    }
+  }
+
+  // 生成 Subsonic API 安全验证参数
+  Map<String, String> _buildSubsonicParams(String username, String password) {
+    final salt = DateTime.now().millisecondsSinceEpoch.toString().substring(0, 6);
+    final bytes = utf8.encode(password + salt);
+    final digest = md5.convert(bytes);
+    final token = digest.toString();
+    
+    return {
+      'u': username,
+      's': salt,
+      't': token,
+      'v': '1.16.1',
+      'c': 'listenshell',
+      'f': 'json',
+    };
+  }
+
+  // 拼接得到一个用于直连播放或图片的 subsonic query 字符串
+  String buildSubsonicQueryString() {
+    final token = _storageService.getToken() ?? '';
+    if (token.startsWith('subsonic_')) {
+      final password = token.substring(9);
+      final username = _storageService.getUsername() ?? '';
+      final params = _buildSubsonicParams(username, password);
+      return params.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+    }
+    return '';
+  }
+
   // 获取书库列表
   Future<List<Map<String, dynamic>>> getLibraries() async {
     try {
       final baseUrl = _storageService.getServerUrl();
       if (baseUrl == null) throw Exception('Server URL not configured');
+
+      if (isSubsonicMode) {
+        return [
+          {'id': 'subsonic_library', 'name': 'Navidrome 音乐库'}
+        ];
+      }
 
       final response = await _dio.get('$baseUrl/api/libraries');
       if (response.statusCode == 200 && response.data != null) {
@@ -147,6 +238,45 @@ class ApiService {
     try {
       final baseUrl = _storageService.getServerUrl();
       if (baseUrl == null) throw Exception('Server URL not configured');
+
+      if (isSubsonicMode) {
+        // 请求 Subsonic 专辑列表做为书籍列表
+        final response = await _dio.get('$baseUrl/rest/getAlbumList2.view?type=alphabetical&size=500');
+        if (response.statusCode == 200 && response.data != null) {
+          final responseObj = response.data['subsonic-response'] as Map<String, dynamic>?;
+          if (responseObj != null && responseObj['status'] == 'ok') {
+            final albumList = responseObj['albumList2'] as Map<String, dynamic>?;
+            if (albumList != null && albumList['album'] != null) {
+              final albums = albumList['album'] as List<dynamic>;
+              final queryStr = buildSubsonicQueryString();
+              final books = <Book>[];
+              for (final a in albums) {
+                if (a is Map<String, dynamic>) {
+                  final albumId = a['id'] as String;
+                  final coverArtId = a['coverArt'] as String?;
+                  final coverUrl = coverArtId != null 
+                      ? '$baseUrl/rest/getCoverArt.view?id=$coverArtId&$queryStr'
+                      : null;
+                  books.add(Book(
+                    id: albumId,
+                    title: a['name'] as String? ?? '未知专辑',
+                    author: a['artist'] as String? ?? '未知歌手',
+                    narrator: 'Navidrome',
+                    description: '音轨数: ${a['songCount'] ?? '未知'}',
+                    duration: (a['duration'] as num?)?.toDouble() ?? 0.0,
+                    chapters: [],
+                    tracks: [],
+                    isRss: true, // 标记为 isRss == true (多文件模式) 完美继承 RSS 播放流底座
+                    rssCoverUrl: coverUrl,
+                  ));
+                }
+              }
+              return books;
+            }
+          }
+        }
+        return [];
+      }
 
       final response = await _dio.get('$baseUrl/api/libraries/$libraryId/items');
       if (response.statusCode == 200 && response.data != null) {
@@ -181,6 +311,61 @@ class ApiService {
 
       if (isRssMode) {
         return await parseRssFeed(baseUrl);
+      }
+
+      if (isSubsonicMode) {
+        // 请求 Subsonic 专辑歌曲详情并转化为 Chapter 列表
+        final response = await _dio.get('$baseUrl/rest/getAlbum.view?id=$bookId');
+        if (response.statusCode == 200 && response.data != null) {
+          final responseObj = response.data['subsonic-response'] as Map<String, dynamic>?;
+          if (responseObj != null && responseObj['status'] == 'ok') {
+            final albumObj = responseObj['album'] as Map<String, dynamic>?;
+            if (albumObj != null) {
+              final songList = albumObj['song'] as List<dynamic>? ?? [];
+              final queryStr = buildSubsonicQueryString();
+              final chaptersList = <Chapter>[];
+              double currentStart = 0.0;
+              
+              for (var i = 0; i < songList.length; i++) {
+                final s = songList[i];
+                if (s is Map<String, dynamic>) {
+                  final songId = s['id'] as String;
+                  final songTitle = s['title'] as String? ?? '音轨 ${i + 1}';
+                  final dur = (s['duration'] as num?)?.toDouble() ?? 300.0;
+                  final audioUrl = '$baseUrl/rest/stream.view?id=$songId&$queryStr';
+                  
+                  chaptersList.add(Chapter(
+                    id: i,
+                    title: songTitle,
+                    start: currentStart,
+                    end: currentStart + dur,
+                    audioUrl: audioUrl,
+                  ));
+                  currentStart += dur;
+                }
+              }
+
+              final coverArtId = albumObj['coverArt'] as String?;
+              final coverUrl = coverArtId != null 
+                  ? '$baseUrl/rest/getCoverArt.view?id=$coverArtId&$queryStr'
+                  : null;
+
+              return Book(
+                id: bookId,
+                title: albumObj['name'] as String? ?? '未知专辑',
+                author: albumObj['artist'] as String? ?? '未知歌手',
+                narrator: 'Navidrome',
+                description: '包含 ${songList.length} 个音轨章节。',
+                duration: currentStart,
+                chapters: chaptersList,
+                tracks: [],
+                isRss: true,
+                rssCoverUrl: coverUrl,
+              );
+            }
+          }
+        }
+        return null;
       }
 
       final response = await _dio.get('$baseUrl/api/items/$bookId');
