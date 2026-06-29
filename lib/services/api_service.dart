@@ -445,44 +445,64 @@ class ApiService {
   Future<Book?> parseRssFeed(String feedUrl) async {
     try {
       developer.log('Fetching RSS Feed from: $feedUrl', name: 'ApiService');
-      final response = await _dio.get(feedUrl);
+      
+      // 显式指定以纯文本格式拉取 XML，防止 Dio 底层错误解析
+      final response = await _dio.get(
+        feedUrl,
+        options: Options(responseType: ResponseType.plain),
+      );
+      
       if (response.statusCode != 200 || response.data == null) {
-        throw Exception('获取 RSS Feed 失败');
+        throw Exception('获取 RSS 失败，状态码: ${response.statusCode}');
       }
 
       final xmlString = response.data.toString();
       final document = XmlDocument.parse(xmlString);
+      
+      // findAllElements 会在任意层级查找 channel
       final channel = document.findAllElements('channel').firstOrNull;
       if (channel == null) {
         throw Exception('未找到有效的 channel 节点');
       }
 
+      // 提取标题和简介 (使用 localName 兼容所有命名空间)
       final title = channel.findElements('title').firstOrNull?.innerText ?? '未知有声书';
       final description = channel.findElements('description').firstOrNull?.innerText ?? '免密 RSS 订阅播客';
       
-      // 封面大图解析 (兼容 itunes 扩展标准)
+      // 提取封面图
       String? coverUrl;
       final imageNode = channel.findElements('image').firstOrNull;
       if (imageNode != null) {
         coverUrl = imageNode.findElements('url').firstOrNull?.innerText;
       }
-      coverUrl ??= channel.findElements('itunes:image').firstOrNull?.getAttribute('href');
+      
+      // itunes:image 兼容模糊查找
+      if (coverUrl == null || coverUrl.isEmpty) {
+        final itunesImage = channel.descendants
+            .whereType<XmlElement>()
+            .firstWhereOrNull((e) => e.name.local == 'image' && e.getAttribute('href') != null);
+        coverUrl = itunesImage?.getAttribute('href');
+      }
 
-      final items = channel.findElements('item');
+      final items = channel.findAllElements('item'); // 确保能拿到所有的 item 节点
       final chaptersList = <Chapter>[];
       double currentStart = 0.0;
 
       int idx = 0;
       for (final item in items) {
         final itemTitle = item.findElements('title').firstOrNull?.innerText ?? '第 ${idx + 1} 章节';
+        
         final enclosure = item.findElements('enclosure').firstOrNull;
         if (enclosure == null) continue;
         
         final audioUrl = enclosure.getAttribute('url');
-        if (audioUrl == null) continue;
+        if (audioUrl == null || audioUrl.isEmpty) continue;
 
-        // 解析章节时长 
-        final durationStr = item.findElements('itunes:duration').firstOrNull?.innerText ?? '00:00';
+        // 提取时长 (兼容 itunes:duration，模糊匹配 local 为 duration 的子元素)
+        final durationNode = item.descendants
+            .whereType<XmlElement>()
+            .firstWhereOrNull((e) => e.name.local == 'duration');
+        final durationStr = durationNode?.innerText ?? '00:00';
         final durationSeconds = _parseDuration(durationStr);
 
         chaptersList.add(Chapter(
@@ -497,6 +517,10 @@ class ApiService {
         idx++;
       }
 
+      if (chaptersList.isEmpty) {
+        throw Exception('解析完成，但未提取到任何章节音轨');
+      }
+
       return Book(
         id: 'rss_${feedUrl.hashCode}',
         title: title,
@@ -509,8 +533,8 @@ class ApiService {
         isRss: true,
         rssCoverUrl: coverUrl,
       );
-    } catch (e) {
-      developer.log('Parse RSS Feed failed', error: e, name: 'ApiService');
+    } catch (e, stack) {
+      developer.log('Parse RSS Feed failed', error: e, stackTrace: stack, name: 'ApiService');
       return null;
     }
   }
