@@ -10,7 +10,7 @@
 
 ---
 
-**ListenShell** 是一个专为 Windows 平台优化的有声书播放客户端，完美对接 **Audiobookshelf (ABS)** 服务端协议。
+**ListenShell** 是一个专为 Windows 平台优化的有声书播放客户端，完美对接 **Audiobookshelf (ABS)** 协议、**Subsonic (Navidrome)** 协议，以及免密 **RSS 播客订阅源** 的直连加载播放。
 
 为了应对部分私有有声书服主对网页播放和非官方客户端的严格风控，ListenShell 在网络传输层和底层媒体引擎中都加入了深度 **User-Agent 伪装**，完美隐藏桌面端特征，安全无忧。
 
