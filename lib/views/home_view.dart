@@ -73,8 +73,8 @@ class _HomeViewState extends State<HomeView> {
         label: Text('设置'),
       ),
       const NavigationRailDestination(
-        icon: Icon(Icons.logout, color: Colors.redAccent),
-        label: Text('登出', style: TextStyle(color: Colors.redAccent)),
+        icon: Icon(Icons.swap_horiz, color: Colors.tealAccent),
+        label: Text('切换', style: TextStyle(color: Colors.tealAccent)),
       ),
     ];
 
@@ -89,8 +89,8 @@ class _HomeViewState extends State<HomeView> {
                   selectedIndex: _navIndex,
                   onDestinationSelected: (index) {
                     if (index == destinations.length - 1) {
-                      // 退出登录
-                      _showLogoutDialog();
+                      // 切换服务器
+                      _showSwitchServerDialog();
                     } else {
                       setState(() {
                         _navIndex = index;
@@ -529,12 +529,12 @@ class _HomeViewState extends State<HomeView> {
     );
   }
 
-  void _showLogoutDialog() {
+  void _showSwitchServerDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('提示'),
-        content: const Text('确定要退出当前服务器登录吗？您的本地连接信息将会被清除。'),
+        title: const Text('切换服务器'),
+        content: const Text('返回服务器选择页面？当前连接将断开，但所有服务器配置会保留。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
@@ -543,9 +543,10 @@ class _HomeViewState extends State<HomeView> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              context.read<AuthProvider>().logout();
+              context.read<LibraryProvider>().clearCache();
+              context.read<AuthProvider>().switchToServerSelector();
             },
-            child: const Text('确定登出', style: TextStyle(color: Colors.redAccent)),
+            child: const Text('切换', style: TextStyle(color: Colors.tealAccent)),
           ),
         ],
       ),

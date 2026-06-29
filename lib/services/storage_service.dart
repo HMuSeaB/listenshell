@@ -58,4 +58,8 @@ class StorageService {
     final raw = json.encode(profiles);
     return _prefs.setString('server_profiles', raw);
   }
+
+  // 获取上次活跃的 Profile ID
+  String? getActiveProfileId() => _prefs.getString('active_profile_id');
+  Future<bool> setActiveProfileId(String value) => _prefs.setString('active_profile_id', value);
 }

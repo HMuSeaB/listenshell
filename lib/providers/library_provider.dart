@@ -157,4 +157,19 @@ class LibraryProvider extends ChangeNotifier {
   Future<Book?> fetchPlaylistTracksAsBook(String playlistId, String playlistName) async {
     return await _apiService.getSubsonicPlaylistTracks(playlistId, playlistName);
   }
+
+  // 清空全部缓存（切换服务器时调用）
+  void clearCache() {
+    _libraries = [];
+    _selectedLibrary = null;
+    _books = [];
+    _filteredBooks = [];
+    _artists = [];
+    _playlists = [];
+    _searchQuery = '';
+    _isLoading = false;
+    _isLoadingArtists = false;
+    _isLoadingPlaylists = false;
+    notifyListeners();
+  }
 }

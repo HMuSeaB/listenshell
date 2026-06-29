@@ -13,6 +13,7 @@ import 'services/audio_service.dart';
 import 'services/storage_service.dart';
 import 'views/home_view.dart';
 import 'views/login_view.dart';
+import 'views/server_selector_view.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -94,7 +95,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// 自动登录与权限认证路由网关
+// 自动登录与权限认证路由网关 — 三态分流
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
 
@@ -102,7 +103,7 @@ class AuthGate extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
 
-    // 1. 若本地存储中的 Token 仍在读取校验中，显示全屏渐变加载
+    // 1. 若仍在初始化中，显示全屏加载
     if (!auth.isInitialized) {
       return const Scaffold(
         body: Center(
@@ -118,11 +119,14 @@ class AuthGate extends StatelessWidget {
       );
     }
 
-    // 2. 根据登录认证状态分流界面
-    if (auth.isAuthenticated) {
-      return const HomeView();
-    } else {
-      return const LoginView();
+    // 2. 根据 AppView 三态枚举分流界面
+    switch (auth.currentView) {
+      case AppView.home:
+        return const HomeView();
+      case AppView.login:
+        return const LoginView();
+      case AppView.serverSelector:
+        return const ServerSelectorView();
     }
   }
 }
