@@ -598,6 +598,187 @@ class ApiService {
     }
   }
 
+  // Subsonic: 获取所有歌手列表
+  Future<List<Map<String, dynamic>>> getSubsonicArtists() async {
+    if (!isSubsonicMode) return [];
+    final baseUrl = _storageService.getServerUrl();
+    final queryStr = buildSubsonicQueryString();
+    if (baseUrl == null) return [];
+
+    try {
+      final response = await _dio.get('$baseUrl/rest/getArtists.view?$queryStr');
+      LogCollector.instance.log('Subsonic getArtists response status: ${response.statusCode}');
+      if (response.statusCode == 200 && response.data != null) {
+        final responseObj = response.data['subsonic-response'] as Map<String, dynamic>?;
+        if (responseObj != null && responseObj['status'] == 'ok') {
+          final artistsNode = responseObj['artists'] as Map<String, dynamic>?;
+          if (artistsNode != null) {
+            final indexList = artistsNode['index'] as List<dynamic>? ?? [];
+            final List<Map<String, dynamic>> artists = [];
+            for (final index in indexList) {
+              final artistList = index['artist'] as List<dynamic>? ?? [];
+              for (final a in artistList) {
+                artists.add({
+                  'id': a['id'] as String? ?? '',
+                  'name': a['name'] as String? ?? '未知歌手',
+                  'albumCount': a['albumCount'] as int? ?? 0,
+                });
+              }
+            }
+            return artists;
+          }
+        }
+      }
+    } catch (e) {
+      LogCollector.instance.log('Failed to fetch Subsonic artists', error: e);
+    }
+    return [];
+  }
+
+  // Subsonic: 获取某个歌手的所有专辑，并包装为 Book
+  Future<List<Book>> getSubsonicArtistAlbums(String artistId) async {
+    if (!isSubsonicMode) return [];
+    final baseUrl = _storageService.getServerUrl();
+    final queryStr = buildSubsonicQueryString();
+    if (baseUrl == null) return [];
+
+    try {
+      final response = await _dio.get('$baseUrl/rest/getArtist.view?id=$artistId&$queryStr');
+      LogCollector.instance.log('Subsonic getArtist response status: ${response.statusCode}');
+      if (response.statusCode == 200 && response.data != null) {
+        final responseObj = response.data['subsonic-response'] as Map<String, dynamic>?;
+        if (responseObj != null && responseObj['status'] == 'ok') {
+          final artistNode = responseObj['artist'] as Map<String, dynamic>?;
+          if (artistNode != null) {
+            final albumList = artistNode['album'] as List<dynamic>? ?? [];
+            final books = <Book>[];
+            for (final a in albumList) {
+              final albumId = a['id'] as String? ?? '';
+              final coverArtId = a['coverArt'] as String? ?? '';
+              final coverUrl = coverArtId.isNotEmpty
+                  ? '$baseUrl/rest/getCoverArt.view?id=$coverArtId&$queryStr'
+                  : null;
+              books.add(Book(
+                id: albumId,
+                title: a['name'] as String? ?? '未知专辑',
+                author: a['artist'] as String? ?? '未知歌手',
+                narrator: 'Navidrome',
+                description: '音轨数: ${a['songCount'] ?? '未知'}',
+                duration: (a['duration'] as num?)?.toDouble() ?? 0.0,
+                chapters: [],
+                tracks: [],
+                isRss: true,
+                rssCoverUrl: coverUrl,
+              ));
+            }
+            return books;
+          }
+        }
+      }
+    } catch (e) {
+      LogCollector.instance.log('Failed to fetch Subsonic artist albums', error: e);
+    }
+    return [];
+  }
+
+  // Subsonic: 获取歌单列表
+  Future<List<Map<String, dynamic>>> getSubsonicPlaylists() async {
+    if (!isSubsonicMode) return [];
+    final baseUrl = _storageService.getServerUrl();
+    final queryStr = buildSubsonicQueryString();
+    if (baseUrl == null) return [];
+
+    try {
+      final response = await _dio.get('$baseUrl/rest/getPlaylists.view?$queryStr');
+      LogCollector.instance.log('Subsonic getPlaylists response status: ${response.statusCode}');
+      if (response.statusCode == 200 && response.data != null) {
+        final responseObj = response.data['subsonic-response'] as Map<String, dynamic>?;
+        if (responseObj != null && responseObj['status'] == 'ok') {
+          final playlistsNode = responseObj['playlists'] as Map<String, dynamic>?;
+          if (playlistsNode != null) {
+            final list = playlistsNode['playlist'] as List<dynamic>? ?? [];
+            return list.map((e) => {
+              'id': e['id'] as String? ?? '',
+              'name': e['name'] as String? ?? '未知歌单',
+              'songCount': e['songCount'] as int? ?? 0,
+              'duration': (e['duration'] as num?)?.toDouble() ?? 0.0,
+            }).toList();
+          }
+        }
+      }
+    } catch (e) {
+      LogCollector.instance.log('Failed to fetch Subsonic playlists', error: e);
+    }
+    return [];
+  }
+
+  // Subsonic: 获取某个歌单的歌曲，并包装为虚拟 Book 以便直接复用播放器
+  Future<Book?> getSubsonicPlaylistTracks(String playlistId, String playlistName) async {
+    if (!isSubsonicMode) return null;
+    final baseUrl = _storageService.getServerUrl();
+    final queryStr = buildSubsonicQueryString();
+    if (baseUrl == null) return null;
+
+    try {
+      final response = await _dio.get('$baseUrl/rest/getPlaylist.view?id=$playlistId&$queryStr');
+      LogCollector.instance.log('Subsonic getPlaylist response status: ${response.statusCode}');
+      if (response.statusCode == 200 && response.data != null) {
+        final responseObj = response.data['subsonic-response'] as Map<String, dynamic>?;
+        if (responseObj != null && responseObj['status'] == 'ok') {
+          final playlistNode = responseObj['playlist'] as Map<String, dynamic>?;
+          if (playlistNode != null) {
+            final entryList = playlistNode['entry'] as List<dynamic>? ?? [];
+            final chapters = <Chapter>[];
+            final tracks = <String>[];
+            
+            double accumulatedDuration = 0.0;
+            for (int i = 0; i < entryList.length; i++) {
+              final e = entryList[i];
+              final songId = e['id'] as String? ?? '';
+              final songTitle = e['title'] as String? ?? '未命名音轨';
+              final duration = (e['duration'] as num?)?.toDouble() ?? 0.0;
+              final streamUrl = '$baseUrl/rest/stream.view?id=$songId&$queryStr';
+
+              chapters.add(Chapter(
+                id: songId,
+                title: songTitle,
+                start: accumulatedDuration,
+                end: accumulatedDuration + duration,
+              ));
+              tracks.add(streamUrl);
+              accumulatedDuration += duration;
+            }
+
+            // 用首个音轨的封面作为虚拟歌单的封面
+            String? coverUrl;
+            if (entryList.isNotEmpty) {
+              final firstCoverId = entryList.first['coverArt'] as String? ?? '';
+              if (firstCoverId.isNotEmpty) {
+                coverUrl = '$baseUrl/rest/getCoverArt.view?id=$firstCoverId&$queryStr';
+              }
+            }
+
+            return Book(
+              id: playlistId,
+              title: playlistName,
+              author: 'Navidrome 歌单',
+              narrator: '虚拟播放列表',
+              description: '共 ${entryList.length} 首歌曲',
+              duration: accumulatedDuration,
+              chapters: chapters,
+              tracks: tracks,
+              isRss: true,
+              rssCoverUrl: coverUrl,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      LogCollector.instance.log('Failed to fetch Subsonic playlist tracks', error: e);
+    }
+    return null;
+  }
+
   // 动态构建和应用 HTTP 全局代理配置
   void setupProxy() {
     try {

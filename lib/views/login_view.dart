@@ -161,61 +161,26 @@ class _LoginViewState extends State<LoginView> {
     }
   }
 
-  // 命名并保存 Profile
+  // 静默命名并保存 Profile (模仿手机端 DSOne 自动生成名字)
   Future<void> _promptProfileNameAndSave() async {
     final fullUrl = _buildFullUrl();
-    var defaultName = '未命名服务器';
+    var defaultName = '';
     try {
       final uri = Uri.parse(fullUrl);
       defaultName = uri.host;
       if (defaultName.isEmpty) defaultName = fullUrl;
-    } catch (_) {}
-
-    // 如果历史记录里已经有了一模一样的连接，则静默更新，不弹窗打扰
-    final exists = _profiles.any((p) =>
-        p['url'] == fullUrl &&
-        p['type'] == _loginTab &&
-        p['username'] == (_loginTab == 1 ? '' : _usernameController.text.trim()));
-
-    if (exists) {
-      await _saveCurrentProfile(defaultName);
-      return;
+    } catch (_) {
+      defaultName = fullUrl;
     }
 
-    final nameController = TextEditingController(text: defaultName);
-    if (!mounted) return;
-
-    final name = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('保存服务器记录'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('检测到这是一个新的连接，请为该服务器起一个备注名称：'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: '服务器名称',
-                border: OutlineInputBorder(),
-              ),
-              autofocus: true,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, nameController.text.trim()),
-            child: const Text('直接保存'),
-          ),
-        ],
-      ),
-    );
-
-    final finalName = (name == null || name.trim().isEmpty) ? defaultName : name.trim();
+    String prefix = 'ABS';
+    if (_loginTab == 1) {
+      prefix = 'RSS';
+    } else if (_loginTab == 2) {
+      prefix = 'Navidrome';
+    }
+    
+    final finalName = '$prefix ($defaultName)';
     await _saveCurrentProfile(finalName);
   }
 

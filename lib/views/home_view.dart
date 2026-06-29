@@ -22,6 +22,11 @@ class _HomeViewState extends State<HomeView> {
   int _navIndex = 0; // 0: 书架, 1: 设置
   final _searchController = TextEditingController();
 
+  String? _selectedArtistId;
+  String? _selectedArtistName;
+  List<Book> _artistAlbums = [];
+  bool _isLoadingArtistAlbums = false;
+
   @override
   void initState() {
     super.initState();
@@ -39,8 +44,39 @@ class _HomeViewState extends State<HomeView> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     final playbackProvider = context.watch<PlaybackProvider>();
+    final auth = context.read<AuthProvider>();
+    final isSubsonic = auth.isSubsonicMode;
+
+    // 动态生成导航目的地
+    final destinations = <NavigationRailDestination>[
+      const NavigationRailDestination(
+        icon: Icon(Icons.library_books),
+        selectedIcon: Icon(Icons.library_books_rounded),
+        label: Text('书架'),
+      ),
+      if (isSubsonic) ...[
+        const NavigationRailDestination(
+          icon: Icon(Icons.people),
+          selectedIcon: Icon(Icons.people_alt),
+          label: Text('歌手'),
+        ),
+        const NavigationRailDestination(
+          icon: Icon(Icons.playlist_play),
+          selectedIcon: Icon(Icons.playlist_play_rounded),
+          label: Text('歌单'),
+        ),
+      ],
+      const NavigationRailDestination(
+        icon: Icon(Icons.settings),
+        selectedIcon: Icon(Icons.settings_applications),
+        label: Text('设置'),
+      ),
+      const NavigationRailDestination(
+        icon: Icon(Icons.logout, color: Colors.redAccent),
+        label: Text('登出', style: TextStyle(color: Colors.redAccent)),
+      ),
+    ];
 
     return Scaffold(
       body: Column(
@@ -52,13 +88,26 @@ class _HomeViewState extends State<HomeView> {
                 NavigationRail(
                   selectedIndex: _navIndex,
                   onDestinationSelected: (index) {
-                    if (index == 2) {
+                    if (index == destinations.length - 1) {
                       // 退出登录
                       _showLogoutDialog();
                     } else {
                       setState(() {
                         _navIndex = index;
+                        // 切换 Tab 时自动重置歌手二级页面
+                        _selectedArtistId = null;
+                        _selectedArtistName = null;
+                        _artistAlbums = [];
                       });
+
+                      // 切换时静默更新下分类数据
+                      if (isSubsonic) {
+                        if (index == 1) {
+                          context.read<LibraryProvider>().fetchArtists();
+                        } else if (index == 2) {
+                          context.read<LibraryProvider>().fetchPlaylists();
+                        }
+                      }
                     }
                   },
                   labelType: NavigationRailLabelType.all,
@@ -66,28 +115,13 @@ class _HomeViewState extends State<HomeView> {
                     padding: EdgeInsets.symmetric(vertical: 24.0),
                     child: Icon(Icons.headphones, size: 36),
                   ),
-                  destinations: const [
-                    NavigationRailDestination(
-                      icon: Icon(Icons.library_books),
-                      selectedIcon: Icon(Icons.library_books_rounded),
-                      label: Text('书架'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.settings),
-                      selectedIcon: Icon(Icons.settings_applications),
-                      label: Text('设置'),
-                    ),
-                    NavigationRailDestination(
-                      icon: Icon(Icons.logout, color: Colors.redAccent),
-                      label: Text('登出', style: TextStyle(color: Colors.redAccent)),
-                    ),
-                  ],
+                  destinations: destinations,
                 ),
                 const VerticalDivider(thickness: 1, width: 1),
 
                 // 2. 右侧主体页面
                 Expanded(
-                  child: _navIndex == 0 ? _buildLibraryView() : _buildSettingsView(),
+                  child: _buildBody(isSubsonic),
                 ),
               ],
             ),
@@ -104,7 +138,6 @@ class _HomeViewState extends State<HomeView> {
   // 构建书架视图
   Widget _buildLibraryView() {
     final libProvider = context.watch<LibraryProvider>();
-    final authProvider = context.watch<AuthProvider>();
     final colorScheme = Theme.of(context).colorScheme;
     final storageService = context.read<StorageService>();
 
@@ -179,6 +212,9 @@ class _HomeViewState extends State<HomeView> {
             ],
           ),
           const SizedBox(height: 24),
+
+          // 扁平彩色分类卡片入口栏
+          _buildCategoryTiles(libProvider),
 
           // 书籍网格展示
           Expanded(
@@ -512,6 +548,407 @@ class _HomeViewState extends State<HomeView> {
             child: const Text('确定登出', style: TextStyle(color: Colors.redAccent)),
           ),
         ],
+      ),
+    );
+  }
+
+  // 根据当前导航状态路由对应的主页面
+  Widget _buildBody(bool isSubsonic) {
+    if (isSubsonic) {
+      if (_navIndex == 0) return _buildLibraryView();
+      if (_navIndex == 1) return _buildArtistsView();
+      if (_navIndex == 2) return _buildPlaylistsView();
+      return _buildSettingsView();
+    } else {
+      if (_navIndex == 0) return _buildLibraryView();
+      return _buildSettingsView();
+    }
+  }
+
+  // 构建歌手分类列表和二级专辑列表页面
+  Widget _buildArtistsView() {
+    final libProvider = context.watch<LibraryProvider>();
+    final colorScheme = Theme.of(context).colorScheme;
+    final storageService = context.read<StorageService>();
+
+    // 二级页面：某歌手的专辑列表
+    if (_selectedArtistId != null) {
+      return Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () {
+                    setState(() {
+                      _selectedArtistId = null;
+                      _selectedArtistName = null;
+                      _artistAlbums = [];
+                    });
+                  },
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '$_selectedArtistName 的有声专辑',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onSurface,
+                      ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Expanded(
+              child: _isLoadingArtistAlbums
+                  ? const Center(child: CircularProgressIndicator())
+                  : _artistAlbums.isEmpty
+                      ? const Center(child: Text('该歌手暂无专辑数据'))
+                      : GridView.builder(
+                          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                            maxCrossAxisExtent: 180,
+                            childAspectRatio: 0.6,
+                            crossAxisSpacing: 20,
+                            mainAxisSpacing: 20,
+                          ),
+                          itemCount: _artistAlbums.length,
+                          itemBuilder: (context, index) {
+                            final book = _artistAlbums[index];
+                            return _buildBookCard(book, storageService);
+                          },
+                        ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 一级页面：歌手列表网格
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '歌手分类',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
+                ),
+          ),
+          const SizedBox(height: 20),
+          Expanded(
+            child: libProvider.isLoadingArtists
+                ? const Center(child: CircularProgressIndicator())
+                : libProvider.artists.isEmpty
+                    ? const Center(child: Text('暂无歌手分类数据'))
+                    : GridView.builder(
+                        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                          maxCrossAxisExtent: 160,
+                          childAspectRatio: 1.1,
+                          crossAxisSpacing: 16,
+                          mainAxisSpacing: 16,
+                        ),
+                        itemCount: libProvider.artists.length,
+                        itemBuilder: (context, index) {
+                          final artist = libProvider.artists[index];
+                          final id = artist['id'] as String;
+                          final name = artist['name'] as String;
+                          final count = artist['albumCount'] as int;
+
+                          return Card(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: colorScheme.outlineVariant.withOpacity(0.3),
+                              ),
+                            ),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () async {
+                                setState(() {
+                                  _selectedArtistId = id;
+                                  _selectedArtistName = name;
+                                  _isLoadingArtistAlbums = true;
+                                });
+                                final albums = await libProvider.fetchArtistAlbums(id);
+                                setState(() {
+                                  _artistAlbums = albums;
+                                  _isLoadingArtistAlbums = false;
+                                });
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    CircleAvatar(
+                                      backgroundColor: colorScheme.primary.withOpacity(0.1),
+                                      child: Text(
+                                        name.isNotEmpty ? name.substring(0, 1).toUpperCase() : '?',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: colorScheme.primary,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '$count 个有声书',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 构建歌单列表页并直接映射到虚拟有声书播单
+  Widget _buildPlaylistsView() {
+    final libProvider = context.watch<LibraryProvider>();
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Padding(
+      padding: const EdgeInsets.all(24.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '我的歌单',
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.onSurface,
+                ),
+          ),
+          const SizedBox(height: 20),
+          Expanded(
+            child: libProvider.isLoadingPlaylists
+                ? const Center(child: CircularProgressIndicator())
+                : libProvider.playlists.isEmpty
+                    ? const Center(child: Text('暂无歌单数据'))
+                    : ListView.builder(
+                        itemCount: libProvider.playlists.length,
+                        itemBuilder: (context, index) {
+                          final p = libProvider.playlists[index];
+                          final id = p['id'] as String;
+                          final name = p['name'] as String;
+                          final count = p['songCount'] as int;
+                          final duration = p['duration'] as double;
+
+                          final hrs = (duration / 3600).floor();
+                          final mins = ((duration % 3600) / 60).floor();
+                          final durationStr = hrs > 0 ? '$hrs 小时 $mins 分钟' : '$mins 分钟';
+
+                          return Card(
+                            margin: const EdgeInsets.symmetric(vertical: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: colorScheme.outlineVariant.withOpacity(0.3),
+                              ),
+                            ),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: colorScheme.secondary.withOpacity(0.1),
+                                child: Icon(Icons.queue_music, color: colorScheme.secondary),
+                              ),
+                              title: Text(
+                                name,
+                                style: const TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text('共 $count 首歌曲 • 总播放时长: $durationStr'),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () async {
+                                showDialog(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (ctx) => const Center(child: CircularProgressIndicator()),
+                                );
+                                
+                                final virtualBook = await libProvider.fetchPlaylistTracksAsBook(id, name);
+                                if (mounted) {
+                                  Navigator.pop(context); // 关闭加载弹窗
+                                  if (virtualBook != null) {
+                                    // 完美无缝跳转到书籍详情页进行章节化播放！
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (ctx) => BookDetailView(book: virtualBook),
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('歌单数据加载失败')),
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 构建扁平多色卡片分类横幅 (完全对照手机端彩色分类磁贴排版)
+  Widget _buildCategoryTiles(LibraryProvider libProvider) {
+    final isSubsonic = context.read<AuthProvider>().isSubsonicMode;
+    if (!isSubsonic) return const SizedBox.shrink();
+
+    // 智能估算歌曲总数 (累加所有专辑里面的歌曲章节音轨数)
+    final songCount = libProvider.books.fold<int>(0, (sum, book) => sum + (book.chapters.isNotEmpty ? book.chapters.length : 1));
+    final albumCount = libProvider.books.length;
+    final artistCount = libProvider.artists.length;
+    final playlistCount = libProvider.playlists.length;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24.0),
+      child: Row(
+        children: [
+          // 1. 歌曲 (绿色，手机端 #2E7D32)
+          Expanded(
+            child: _buildCategoryCard(
+              title: '歌曲',
+              count: songCount.toString(),
+              icon: Icons.music_note_rounded,
+              color: Colors.green,
+              onTap: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('已自动拉取加载全部歌曲，您可直接在上方进行搜索播放！')),
+                );
+              },
+            ),
+          ),
+          const SizedBox(width: 16),
+          // 2. 专辑 (橙色，手机端 #EF6C00)
+          Expanded(
+            child: _buildCategoryCard(
+              title: '专辑',
+              count: albumCount.toString(),
+              icon: Icons.album_rounded,
+              color: Colors.orange,
+              onTap: () {
+                setState(() {
+                  _navIndex = 0;
+                });
+              },
+            ),
+          ),
+          const SizedBox(width: 16),
+          // 3. 歌手 (蓝色，手机端 #1565C0)
+          Expanded(
+            child: _buildCategoryCard(
+              title: '歌手',
+              count: artistCount.toString(),
+              icon: Icons.people_rounded,
+              color: Colors.blue,
+              onTap: () {
+                setState(() {
+                  _navIndex = 1;
+                });
+                context.read<LibraryProvider>().fetchArtists();
+              },
+            ),
+          ),
+          const SizedBox(width: 16),
+          // 4. 歌单 (红色，手机端 #C2185B)
+          Expanded(
+            child: _buildCategoryCard(
+              title: '歌单',
+              count: playlistCount.toString(),
+              icon: Icons.playlist_play_rounded,
+              color: Colors.pink,
+              onTap: () {
+                setState(() {
+                  _navIndex = 2;
+                });
+                context.read<LibraryProvider>().fetchPlaylists();
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 快捷入口卡片细节渲染
+  Widget _buildCategoryCard({
+    required String title,
+    required String count,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return Card(
+      elevation: 0,
+      color: color.withOpacity(0.08),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: color.withOpacity(0.25), width: 1.5),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundColor: color.withOpacity(0.15),
+                radius: 22,
+                child: Icon(icon, color: color, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: color.withOpacity(0.9),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      count,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
