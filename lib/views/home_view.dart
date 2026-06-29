@@ -68,6 +68,11 @@ class _HomeViewState extends State<HomeView> {
         ),
       ],
       const NavigationRailDestination(
+        icon: Icon(Icons.play_circle_outline),
+        selectedIcon: Icon(Icons.play_circle),
+        label: Text('播放器'),
+      ),
+      const NavigationRailDestination(
         icon: Icon(Icons.settings),
         selectedIcon: Icon(Icons.settings_applications),
         label: Text('设置'),
@@ -129,7 +134,13 @@ class _HomeViewState extends State<HomeView> {
           
           // 3. 底部迷你播放器栏
           if (playbackProvider.currentBook != null)
-            const MiniPlayerBar(),
+            MiniPlayerBar(
+              onTap: () {
+                setState(() {
+                  _navIndex = isSubsonic ? 3 : 1;
+                });
+              },
+            ),
         ],
       ),
     );
@@ -559,9 +570,11 @@ class _HomeViewState extends State<HomeView> {
       if (_navIndex == 0) return _buildLibraryView();
       if (_navIndex == 1) return _buildArtistsView();
       if (_navIndex == 2) return _buildPlaylistsView();
+      if (_navIndex == 3) return const PlayerPageView();
       return _buildSettingsView();
     } else {
       if (_navIndex == 0) return _buildLibraryView();
+      if (_navIndex == 1) return const PlayerPageView();
       return _buildSettingsView();
     }
   }

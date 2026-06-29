@@ -59,13 +59,12 @@ class PlaybackProvider extends ChangeNotifier {
       final isMulti = _currentBook!.isRss || _apiService.isSubsonicMode;
       if (isMulti) {
         if (_currentChapter == null) return;
-        // RSS 模式：绝对进度 = 章节起始绝对时间 + 播放器内相对时间
-        final absSeconds = (_currentChapter!.start + pos.inSeconds).toInt();
-        _position = Duration(seconds: absSeconds);
+        // RSS/Subsonic 模式：以当前播放章节的相对时间展示进度
+        _position = pos;
 
         // 判定是否播放完当前章节，若是，则自动切入下一章
         final chapterDuration = _currentChapter!.end - _currentChapter!.start;
-        if (pos.inSeconds >= chapterDuration.toInt() && !_isLoading) {
+        if (pos.inSeconds >= chapterDuration.toInt() - 1 && !_isLoading) {
           _playNextRssChapter();
         }
       } else {
@@ -80,8 +79,9 @@ class PlaybackProvider extends ChangeNotifier {
     _durSub = _audioService.durationStream.listen((dur) {
       final isMulti = _currentBook?.isRss == true || _apiService.isSubsonicMode;
       if (isMulti && _currentBook != null) {
-        // RSS 模式下整本书总长度暴露为 book.duration
-        _duration = Duration(seconds: _currentBook!.duration.toInt());
+        // 如果底层获取到的音频总长为 0（如缓冲中），以章节元数据中的时长进行保底
+        final chDur = _currentChapter != null ? (_currentChapter!.end - _currentChapter!.start) : 0.0;
+        _duration = dur.inSeconds > 0 ? dur : Duration(seconds: chDur.toInt());
       } else {
         _duration = dur;
       }
@@ -164,8 +164,8 @@ class PlaybackProvider extends ChangeNotifier {
       await _audioService.setSpeed(_playbackRate);
 
       // 同步一次本地进度
-      _position = Duration(seconds: (chapter.start + startFromChapterRelativeSeconds).toInt());
-      await _storageService.setBookProgress(_currentBook!.id, _position.inSeconds.toDouble());
+      _position = Duration(seconds: startFromChapterRelativeSeconds.toInt());
+      await _storageService.setBookProgress(_currentBook!.id, chapter.start + startFromChapterRelativeSeconds);
     } catch (e) {
       developer.log('Play RSS/Subsonic chapter failed', error: e, name: 'PlaybackProvider');
     } finally {
@@ -270,30 +270,10 @@ class PlaybackProvider extends ChangeNotifier {
     
     final isMulti = _currentBook?.isRss == true || _apiService.isSubsonicMode;
     if (isMulti) {
-      final absSeconds = pos.inSeconds.toDouble();
-      
-      // 查找对应章节
-      Chapter? targetChapter;
-      for (final chapter in _currentBook!.chapters) {
-        if (absSeconds >= chapter.start && absSeconds <= chapter.end) {
-          targetChapter = chapter;
-          break;
-        }
-      }
-      targetChapter ??= _currentBook!.chapters.firstOrNull;
-      
-      if (targetChapter != null) {
-        final relativeSeek = absSeconds - targetChapter.start;
-        if (_currentChapter?.id == targetChapter.id) {
-          // 在同章节内，直接 seek
-          await _audioService.seek(Duration(seconds: relativeSeek.toInt()));
-          _position = pos;
-          notifyListeners();
-        } else {
-          // 跨章节，需要切音频流
-          await _playRssChapter(targetChapter, startFromChapterRelativeSeconds: relativeSeek);
-        }
-      }
+      // 相对 seek，直接在当前章节音频流内定位，极为流畅
+      await _audioService.seek(pos);
+      _position = pos;
+      notifyListeners();
     } else {
       await _audioService.seek(pos);
     }
@@ -333,10 +313,12 @@ class PlaybackProvider extends ChangeNotifier {
     final bookId = _currentBook?.id;
     if (bookId == null || _accumulatedTimeListened <= 0.0) return;
 
-    final curTime = _position.inSeconds.toDouble();
+    final isMulti = _currentBook?.isRss == true || _apiService.isSubsonicMode;
+    final curTime = isMulti
+        ? ((_currentChapter != null ? _currentChapter!.start : 0.0) + _position.inSeconds.toDouble())
+        : _position.inSeconds.toDouble();
     
     // 如果是 RSS/Subsonic 模式，将当前进度存入本地缓存并返回
-    final isMulti = _currentBook?.isRss == true || _apiService.isSubsonicMode;
     if (isMulti) {
       _accumulatedTimeListened = 0.0;
       await _storageService.setBookProgress(bookId, curTime);
