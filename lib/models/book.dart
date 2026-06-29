@@ -9,6 +9,8 @@ class Book {
   final double duration; // 总时长 (秒)
   final List<Chapter> chapters;
   final List<Map<String, dynamic>> tracks;
+  final bool isRss; // 是否为免密 RSS 订阅模式
+  final String? rssCoverUrl; // RSS 源专用的封面大图直连 URL
 
   Book({
     required this.id,
@@ -19,10 +21,15 @@ class Book {
     required this.duration,
     required this.chapters,
     required this.tracks,
+    this.isRss = false,
+    this.rssCoverUrl,
   });
 
   // 获取封面完整地址
   String getCoverUrl(String baseUrl) {
+    if (isRss && rssCoverUrl != null && rssCoverUrl!.isNotEmpty) {
+      return rssCoverUrl!;
+    }
     // 拼接成 /api/items/{id}/cover
     final cleanUrl = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
     return '$cleanUrl/api/items/$id/cover';
@@ -78,6 +85,8 @@ class Book {
       duration: (media['duration'] as num?)?.toDouble() ?? 0.0,
       chapters: chaptersList,
       tracks: tracksList,
+      isRss: json['isRss'] as bool? ?? false,
+      rssCoverUrl: json['rssCoverUrl'] as String?,
     );
   }
 }

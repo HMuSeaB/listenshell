@@ -26,10 +26,18 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _libraries = await _apiService.getLibraries();
-      if (_libraries.isNotEmpty && _selectedLibrary == null) {
-        // 默认选中第一个
-        await selectLibrary(_libraries.first);
+      if (_apiService.isRssMode) {
+        _libraries = [
+          {'id': 'rss_library', 'name': 'RSS 播客订阅'}
+        ];
+        _selectedLibrary = _libraries.first;
+        await selectLibrary(_selectedLibrary!);
+      } else {
+        _libraries = await _apiService.getLibraries();
+        if (_libraries.isNotEmpty && _selectedLibrary == null) {
+          // 默认选中第一个
+          await selectLibrary(_libraries.first);
+        }
       }
     } catch (_) {
       // 容错
@@ -48,8 +56,16 @@ class LibraryProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final libraryId = library['id'] as String;
-      _books = await _apiService.getLibraryItems(libraryId);
+      if (_apiService.isRssMode) {
+        final feedUrl = _apiService.currentUrl ?? '';
+        final book = await _apiService.parseRssFeed(feedUrl);
+        if (book != null) {
+          _books = [book];
+        }
+      } else {
+        final libraryId = library['id'] as String;
+        _books = await _apiService.getLibraryItems(libraryId);
+      }
       _applyFilter();
     } catch (_) {
       // 容错

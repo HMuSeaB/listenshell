@@ -1,11 +1,16 @@
 import 'dart:developer' as developer;
 import 'package:dio/dio.dart';
+import 'package:xml/xml.dart';
 import 'storage_service.dart';
 import '../models/book.dart';
+import '../models/chapter.dart';
 
 class ApiService {
   final StorageService _storageService;
   late final Dio _dio;
+
+  bool get isRssMode => _storageService.getToken() == 'rss_token';
+  String? get currentUrl => _storageService.getServerUrl();
 
   ApiService(this._storageService) {
     _dio = Dio(BaseOptions(
@@ -174,6 +179,10 @@ class ApiService {
       final baseUrl = _storageService.getServerUrl();
       if (baseUrl == null) throw Exception('Server URL not configured');
 
+      if (isRssMode) {
+        return await parseRssFeed(baseUrl);
+      }
+
       final response = await _dio.get('$baseUrl/api/items/$bookId');
       if (response.statusCode == 200 && response.data != null) {
         return Book.fromJson(response.data as Map<String, dynamic>);
@@ -244,6 +253,102 @@ class ApiService {
     } catch (e) {
       // 吞掉同步进度的错误，不打扰核心播放流程，但记录日志
       developer.log('Sync playback progress failed', error: e, name: 'ApiService');
+    }
+  }
+
+  // 免密 RSS 订阅源 XML 数据流解析逻辑
+  Future<Book?> parseRssFeed(String feedUrl) async {
+    try {
+      developer.log('Fetching RSS Feed from: $feedUrl', name: 'ApiService');
+      final response = await _dio.get(feedUrl);
+      if (response.statusCode != 200 || response.data == null) {
+        throw Exception('获取 RSS Feed 失败');
+      }
+
+      final xmlString = response.data.toString();
+      final document = XmlDocument.parse(xmlString);
+      final channel = document.findAllElements('channel').firstOrNull;
+      if (channel == null) {
+        throw Exception('未找到有效的 channel 节点');
+      }
+
+      final title = channel.findElements('title').firstOrNull?.innerText ?? '未知有声书';
+      final description = channel.findElements('description').firstOrNull?.innerText ?? '免密 RSS 订阅播客';
+      
+      // 封面大图解析 (兼容 itunes 扩展标准)
+      String? coverUrl;
+      final imageNode = channel.findElements('image').firstOrNull;
+      if (imageNode != null) {
+        coverUrl = imageNode.findElements('url').firstOrNull?.innerText;
+      }
+      coverUrl ??= channel.findElements('itunes:image').firstOrNull?.getAttribute('href');
+
+      final items = channel.findElements('item');
+      final chaptersList = <Chapter>[];
+      double currentStart = 0.0;
+
+      int idx = 0;
+      for (final item in items) {
+        final itemTitle = item.findElements('title').firstOrNull?.innerText ?? '第 ${idx + 1} 章节';
+        final enclosure = item.findElements('enclosure').firstOrNull;
+        if (enclosure == null) continue;
+        
+        final audioUrl = enclosure.getAttribute('url');
+        if (audioUrl == null) continue;
+
+        // 解析章节时长 
+        final durationStr = item.findElements('itunes:duration').firstOrNull?.innerText ?? '00:00';
+        final durationSeconds = _parseDuration(durationStr);
+
+        chaptersList.add(Chapter(
+          id: idx,
+          title: itemTitle,
+          start: currentStart,
+          end: currentStart + durationSeconds,
+          audioUrl: audioUrl,
+        ));
+        
+        currentStart += durationSeconds;
+        idx++;
+      }
+
+      return Book(
+        id: 'rss_${feedUrl.hashCode}',
+        title: title,
+        author: 'RSS 播客源',
+        narrator: '免密收听',
+        description: description,
+        duration: currentStart,
+        chapters: chaptersList,
+        tracks: [], // RSS 模式下直接通过 Chapter.audioUrl 播放
+        isRss: true,
+        rssCoverUrl: coverUrl,
+      );
+    } catch (e) {
+      developer.log('Parse RSS Feed failed', error: e, name: 'ApiService');
+      return null;
+    }
+  }
+
+  // 辅助方法：解析 RSS 时长格式（如 16:21 或 01:15:32 等）
+  double _parseDuration(String durationStr) {
+    try {
+      if (durationStr.contains(':')) {
+        final parts = durationStr.split(':');
+        if (parts.length == 2) {
+          final m = int.parse(parts[0]);
+          final s = int.parse(parts[1]);
+          return (m * 60 + s).toDouble();
+        } else if (parts.length == 3) {
+          final h = int.parse(parts[0]);
+          final m = int.parse(parts[1]);
+          final s = int.parse(parts[2]);
+          return (h * 3600 + m * 60 + s).toDouble();
+        }
+      }
+      return double.parse(durationStr);
+    } catch (_) {
+      return 300.0; // 解析失败默认设为 5 分钟
     }
   }
 }

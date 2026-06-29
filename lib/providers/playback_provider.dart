@@ -55,16 +55,34 @@ class PlaybackProvider extends ChangeNotifier {
         _accumulatedTimeListened += diff / 1000.0;
       }
       _lastPosition = pos;
-      _position = pos;
 
-      // 判定当前所属章节
-      _updateCurrentChapter(pos.inSeconds.toDouble());
+      if (_currentBook!.isRss) {
+        if (_currentChapter == null) return;
+        // RSS 模式：绝对进度 = 章节起始绝对时间 + 播放器内相对时间
+        final absSeconds = (_currentChapter!.start + pos.inSeconds).toInt();
+        _position = Duration(seconds: absSeconds);
+
+        // 判定是否播放完当前章节，若是，则自动切入下一章
+        final chapterDuration = _currentChapter!.end - _currentChapter!.start;
+        if (pos.inSeconds >= chapterDuration.toInt() && !_isLoading) {
+          _playNextRssChapter();
+        }
+      } else {
+        _position = pos;
+        // 判定当前所属章节
+        _updateCurrentChapter(pos.inSeconds.toDouble());
+      }
       notifyListeners();
     });
 
     // 监听音频总时长改变
     _durSub = _audioService.durationStream.listen((dur) {
-      _duration = dur;
+      if (_currentBook != null && _currentBook!.isRss) {
+        // RSS 模式下整本书总长度暴露为 book.duration
+        _duration = Duration(seconds: _currentBook!.duration.toInt());
+      } else {
+        _duration = dur;
+      }
       notifyListeners();
     });
 
@@ -109,6 +127,51 @@ class PlaybackProvider extends ChangeNotifier {
     }
   }
 
+  // 自动切入下一章节 (仅限 RSS 模式)
+  Future<void> _playNextRssChapter() async {
+    if (_currentBook == null || _currentChapter == null) return;
+    final nextIndex = _currentChapter!.id + 1;
+    if (nextIndex < _currentBook!.chapters.length) {
+      final nextChapter = _currentBook!.chapters[nextIndex];
+      developer.log('Auto switching to next RSS chapter: ${nextChapter.title}', name: 'PlaybackProvider');
+      await _playRssChapter(nextChapter, startFromChapterRelativeSeconds: 0.0);
+    } else {
+      // 播放完了整本书，停下
+      await pause();
+    }
+  }
+
+  // 内部辅助播放 RSS 章节方法
+  Future<void> _playRssChapter(Chapter chapter, {required double startFromChapterRelativeSeconds}) async {
+    _isLoading = true;
+    _currentChapter = chapter;
+    notifyListeners();
+
+    try {
+      final streamUrl = chapter.audioUrl;
+      if (streamUrl == null || streamUrl.isEmpty) {
+        throw Exception('RSS 章节播放流地址为空');
+      }
+
+      final userAgent = _storageService.getCustomUA();
+      await _audioService.openUrl(streamUrl, userAgent: userAgent);
+
+      if (startFromChapterRelativeSeconds > 0.0) {
+        await _audioService.seek(Duration(seconds: startFromChapterRelativeSeconds.toInt()));
+      }
+      await _audioService.setSpeed(_playbackRate);
+
+      // 同步一次本地进度
+      _position = Duration(seconds: (chapter.start + startFromChapterRelativeSeconds).toInt());
+      await _storageService.setBookProgress(_currentBook!.id, _position.inSeconds.toDouble());
+    } catch (e) {
+      developer.log('Play RSS chapter failed', error: e, name: 'PlaybackProvider');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   // 播放一本书
   Future<void> playBook(Book book, {double? startFromSeconds}) async {
     _isLoading = true;
@@ -121,44 +184,71 @@ class PlaybackProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // 1. 创建播放会话 (Session)
-      final sessionResult = await _apiService.startPlaySession(book.id);
-      if (sessionResult == null) {
-        throw Exception('无法建立播放会话');
+      if (book.isRss) {
+        // RSS 免密直连模式
+        _sessionId = 'rss_session';
+        _duration = Duration(seconds: book.duration.toInt());
+
+        // 查找章节
+        double seekTo = startFromSeconds ?? _storageService.getBookProgress(book.id);
+        Chapter? targetChapter;
+        for (final chapter in book.chapters) {
+          if (seekTo >= chapter.start && seekTo <= chapter.end) {
+            targetChapter = chapter;
+            break;
+          }
+        }
+        targetChapter ??= book.chapters.firstOrNull;
+
+        if (targetChapter == null) {
+          throw Exception('RSS 订阅源没有章节数据');
+        }
+
+        double relativeSeek = seekTo - targetChapter.start;
+        if (relativeSeek < 0.0) relativeSeek = 0.0;
+
+        await _playRssChapter(targetChapter, startFromChapterRelativeSeconds: relativeSeek);
+      } else {
+        // 标准 ABS 客户端模式
+        // 1. 创建播放会话 (Session)
+        final sessionResult = await _apiService.startPlaySession(book.id);
+        if (sessionResult == null) {
+          throw Exception('无法建立播放会话');
+        }
+
+        _sessionId = sessionResult['id'] as String?;
+        final audioTracks = sessionResult['audioTracks'] as List<dynamic>?;
+        if (audioTracks == null || audioTracks.isEmpty) {
+          throw Exception('服务端没有找到对应的音轨');
+        }
+
+        // 进度定位优先级: 参数指定 > 服务端历史进度
+        double seekTo = 0.0;
+        if (startFromSeconds != null) {
+          seekTo = startFromSeconds;
+        } else if (sessionResult['currentTime'] != null) {
+          seekTo = (sessionResult['currentTime'] as num).toDouble();
+        }
+
+        // 2. 拼接完整的媒体流播放地址
+        final relativePath = audioTracks[0]['contentUrl'] as String;
+        final baseUrl = _storageService.getServerUrl() ?? '';
+        final streamUrl = '$baseUrl$relativePath';
+
+        // 3. 打开流音频 (传递伪装 Headers)
+        final userAgent = _storageService.getCustomUA();
+        final token = _storageService.getToken();
+        
+        await _audioService.openUrl(streamUrl, userAgent: userAgent, token: token);
+        
+        // 4. 跳转至指定进度，并应用之前的倍速
+        if (seekTo > 0.0) {
+          await _audioService.seek(Duration(seconds: seekTo.toInt()));
+        }
+        await _audioService.setSpeed(_playbackRate);
+
+        developer.log('Successfully started session $_sessionId for book: ${book.title}', name: 'PlaybackProvider');
       }
-
-      _sessionId = sessionResult['id'] as String?;
-      final audioTracks = sessionResult['audioTracks'] as List<dynamic>?;
-      if (audioTracks == null || audioTracks.isEmpty) {
-        throw Exception('服务端没有找到对应的音轨');
-      }
-
-      // 进度定位优先级: 参数指定 > 服务端历史进度
-      double seekTo = 0.0;
-      if (startFromSeconds != null) {
-        seekTo = startFromSeconds;
-      } else if (sessionResult['currentTime'] != null) {
-        seekTo = (sessionResult['currentTime'] as num).toDouble();
-      }
-
-      // 2. 拼接完整的媒体流播放地址
-      final relativePath = audioTracks[0]['contentUrl'] as String;
-      final baseUrl = _storageService.getServerUrl() ?? '';
-      final streamUrl = '$baseUrl$relativePath';
-
-      // 3. 打开流音频 (传递伪装 Headers)
-      final userAgent = _storageService.getCustomUA();
-      final token = _storageService.getToken();
-      
-      await _audioService.openUrl(streamUrl, userAgent: userAgent, token: token);
-      
-      // 4. 跳转至指定进度，并应用之前的倍速
-      if (seekTo > 0.0) {
-        await _audioService.seek(Duration(seconds: seekTo.toInt()));
-      }
-      await _audioService.setSpeed(_playbackRate);
-
-      developer.log('Successfully started session $_sessionId for book: ${book.title}', name: 'PlaybackProvider');
     } catch (e) {
       developer.log('Play book failed', error: e, name: 'PlaybackProvider');
     } finally {
@@ -174,7 +264,35 @@ class PlaybackProvider extends ChangeNotifier {
   
   Future<void> seek(Duration pos) async {
     _lastPosition = pos; // 避免把 Seek 造成的进度跃变计入收听时间
-    await _audioService.seek(pos);
+    
+    if (_currentBook != null && _currentBook!.isRss) {
+      final absSeconds = pos.inSeconds.toDouble();
+      
+      // 查找对应章节
+      Chapter? targetChapter;
+      for (final chapter in _currentBook!.chapters) {
+        if (absSeconds >= chapter.start && absSeconds <= chapter.end) {
+          targetChapter = chapter;
+          break;
+        }
+      }
+      targetChapter ??= _currentBook!.chapters.firstOrNull;
+      
+      if (targetChapter != null) {
+        final relativeSeek = absSeconds - targetChapter.start;
+        if (_currentChapter?.id == targetChapter.id) {
+          // 在同章节内，直接 seek
+          await _audioService.seek(Duration(seconds: relativeSeek.toInt()));
+          _position = pos;
+          notifyListeners();
+        } else {
+          // 跨章节，需要切音频流
+          await _playRssChapter(targetChapter, startFromChapterRelativeSeconds: relativeSeek);
+        }
+      }
+    } else {
+      await _audioService.seek(pos);
+    }
   }
 
   Future<void> setSpeed(double speed) async {
@@ -185,7 +303,11 @@ class PlaybackProvider extends ChangeNotifier {
 
   // 跳转到指定章节播放
   Future<void> playChapter(Chapter chapter) async {
-    await seek(Duration(seconds: chapter.start.toInt()));
+    if (_currentBook != null && _currentBook!.isRss) {
+      await _playRssChapter(chapter, startFromChapterRelativeSeconds: 0.0);
+    } else {
+      await seek(Duration(seconds: chapter.start.toInt()));
+    }
   }
 
   // 启动周期进度同步计时器 (每 10 秒)
@@ -201,13 +323,24 @@ class PlaybackProvider extends ChangeNotifier {
     _syncTimer = null;
   }
 
-  // 立即同步进度到服务端
+  // 立即同步进度到服务端 (RSS 模式只写入本地缓存)
   Future<void> _syncProgressImmediately() async {
     final bookId = _currentBook?.id;
-    final sId = _sessionId;
-    if (bookId == null || sId == null || _accumulatedTimeListened <= 0.0) return;
+    if (bookId == null || _accumulatedTimeListened <= 0.0) return;
 
     final curTime = _position.inSeconds.toDouble();
+    
+    // 如果是 RSS 模式，将当前进度存入本地缓存并返回
+    if (_currentBook != null && _currentBook!.isRss) {
+      _accumulatedTimeListened = 0.0;
+      await _storageService.setBookProgress(bookId, curTime);
+      developer.log('Synced RSS local progress: ${curTime}s', name: 'PlaybackProvider');
+      return;
+    }
+
+    final sId = _sessionId;
+    if (sId == null) return;
+
     final totalDur = _duration.inSeconds.toDouble();
     final timeListened = _accumulatedTimeListened;
     

@@ -18,6 +18,7 @@ class _LoginViewState extends State<LoginView> {
   final _passwordController = TextEditingController();
   final _uaController = TextEditingController();
 
+  bool _isRssMode = false;
   bool _useHttps = true;
   bool _showPassword = false;
   bool _showAdvanced = false;
@@ -29,20 +30,31 @@ class _LoginViewState extends State<LoginView> {
     final auth = context.read<AuthProvider>();
     // 回填保存的数据
     final savedUrl = auth.serverUrl ?? '';
+    final savedUsername = auth.username ?? '';
+
+    _isRssMode = savedUrl.contains('/feed/') || savedUsername == 'RSS免密订阅';
+
     if (savedUrl.isNotEmpty) {
-      _useHttps = savedUrl.startsWith('https://');
-      var cleanHost = savedUrl.replaceFirst('https://', '').replaceFirst('http://', '');
-      
-      // 提取端口
-      if (cleanHost.contains(':')) {
-        final parts = cleanHost.split(':');
-        _hostController.text = parts[0];
-        _portController.text = parts[1];
+      if (_isRssMode) {
+        _hostController.text = savedUrl;
       } else {
-        _hostController.text = cleanHost;
+        _useHttps = savedUrl.startsWith('https://');
+        var cleanHost = savedUrl.replaceFirst('https://', '').replaceFirst('http://', '');
+        
+        // 提取端口
+        if (cleanHost.contains(':')) {
+          final parts = cleanHost.split(':');
+          _hostController.text = parts[0];
+          _portController.text = parts[1];
+        } else {
+          _hostController.text = cleanHost;
+        }
       }
     }
-    _usernameController.text = auth.username ?? '';
+    
+    if (!_isRssMode) {
+      _usernameController.text = savedUsername;
+    }
     
     // 初始化 UA 输入
     final currentUA = auth.customUA;
@@ -71,6 +83,13 @@ class _LoginViewState extends State<LoginView> {
   // 拼接得到完整地址
   String _buildFullUrl() {
     var host = _hostController.text.trim();
+    if (_isRssMode) {
+      if (!host.startsWith('http://') && !host.startsWith('https://')) {
+        return 'http://$host';
+      }
+      return host;
+    }
+
     // 移除用户不小心写的协议前缀
     host = host.replaceFirst('https://', '').replaceFirst('http://', '');
     
@@ -92,15 +111,21 @@ class _LoginViewState extends State<LoginView> {
     await auth.updateCustomUA(_uaController.text.trim());
 
     final fullUrl = _buildFullUrl();
-    final success = await auth.login(
-      fullUrl,
-      _usernameController.text.trim(),
-      _passwordController.text,
-    );
+    
+    bool success;
+    if (_isRssMode) {
+      success = await auth.loginRss(fullUrl);
+    } else {
+      success = await auth.login(
+        fullUrl,
+        _usernameController.text.trim(),
+        _passwordController.text,
+      );
+    }
 
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('登录成功！')),
+        SnackBar(content: Text(_isRssMode ? '订阅源连接成功！' : '登录成功！')),
       );
     }
   }
@@ -170,11 +195,42 @@ class _LoginViewState extends State<LoginView> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
+
+                  // 登录模式切换 Tab
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('标准登录 (ABS)'),
+                        selected: !_isRssMode,
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              _isRssMode = false;
+                            });
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 16),
+                      ChoiceChip(
+                        label: const Text('RSS 订阅直接播放'),
+                        selected: _isRssMode,
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() {
+                              _isRssMode = true;
+                            });
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
 
                   // 服务器配置
                   Text(
-                    '服务器连接',
+                    _isRssMode ? '订阅源配置' : '服务器连接',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -186,86 +242,94 @@ class _LoginViewState extends State<LoginView> {
                         flex: 3,
                         child: TextFormField(
                           controller: _hostController,
-                          decoration: const InputDecoration(
-                            labelText: '主机地址 (Host)',
-                            hintText: '如: 192.168.1.100 或 abs.com',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.dns),
+                          decoration: InputDecoration(
+                            labelText: _isRssMode ? 'RSS 订阅链接' : '主机地址 (Host)',
+                            hintText: _isRssMode 
+                                ? '例如 http://.../feed/f8face...'
+                                : '如: 192.168.1.100 或 abs.com',
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(Icons.dns),
                           ),
                           validator: (value) =>
-                              (value == null || value.trim().isEmpty) ? '请输入主机地址' : null,
+                              (value == null || value.trim().isEmpty) ? '请输入地址' : null,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 1,
-                        child: TextFormField(
-                          controller: _portController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: '端口 (Port)',
-                            hintText: '可选',
-                            border: OutlineInputBorder(),
+                      if (!_isRssMode) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 1,
+                          child: TextFormField(
+                            controller: _portController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: '端口 (Port)',
+                              hintText: '可选',
+                              border: OutlineInputBorder(),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                   const SizedBox(height: 12),
 
-                  // HTTPS 切换
-                  SwitchListTile(
-                    title: const Text('启用安全连接 (HTTPS)'),
-                    subtitle: const Text('优先推荐启用，若内网部署或无 SSL 证书可关闭'),
-                    value: _useHttps,
-                    onChanged: (val) {
-                      setState(() {
-                        _useHttps = val;
-                      });
-                    },
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  const Divider(height: 24),
+                  if (!_isRssMode) ...[
+                    // HTTPS 切换
+                    SwitchListTile(
+                      title: const Text('启用安全连接 (HTTPS)'),
+                      subtitle: const Text('优先推荐启用，若内网部署或无 SSL 证书可关闭'),
+                      value: _useHttps,
+                      onChanged: (val) {
+                        setState(() {
+                          _useHttps = val;
+                        });
+                      },
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    const Divider(height: 24),
+                  ],
 
-                  // 用户凭据
-                  Text(
-                    '登录凭据',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _usernameController,
-                    decoration: const InputDecoration(
-                      labelText: '用户名',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.person),
+                  if (!_isRssMode) ...[
+                    // 用户凭据
+                    Text(
+                      '登录凭据',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
-                    validator: (value) =>
-                        (value == null || value.trim().isEmpty) ? '请输入用户名' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _passwordController,
-                    obscureText: !_showPassword,
-                    decoration: InputDecoration(
-                      labelText: '密码',
-                      border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.lock),
-                      suffixIcon: IconButton(
-                        icon: Icon(_showPassword ? Icons.visibility : Icons.visibility_off),
-                        onPressed: () {
-                          setState(() {
-                            _showPassword = !_showPassword;
-                          });
-                        },
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _usernameController,
+                      decoration: const InputDecoration(
+                        labelText: '用户名',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.person),
                       ),
+                      validator: (value) =>
+                          (value == null || value.trim().isEmpty) ? '请输入用户名' : null,
                     ),
-                    validator: (value) =>
-                        (value == null || value.isEmpty) ? '请输入密码' : null,
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: !_showPassword,
+                      decoration: InputDecoration(
+                        labelText: '密码',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: const Icon(Icons.lock),
+                        suffixIcon: IconButton(
+                          icon: Icon(_showPassword ? Icons.visibility : Icons.visibility_off),
+                          onPressed: () {
+                            setState(() {
+                              _showPassword = !_showPassword;
+                            });
+                          },
+                        ),
+                      ),
+                      validator: (value) =>
+                          (value == null || value.isEmpty) ? '请输入密码' : null,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   // 高级设置 (User-Agent 伪装)
                   InkWell(
@@ -376,9 +440,9 @@ class _LoginViewState extends State<LoginView> {
                       ),
                       child: auth.isLoading
                           ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text(
-                              '连接并登录',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          : Text(
+                              _isRssMode ? '解析并播放' : '连接并登录',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                     ),
                   ),

@@ -65,6 +65,41 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // 供外部直接以 RSS 模式“登录”
+  Future<bool> loginRss(String url) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final book = await _apiService.parseRssFeed(url);
+      _isLoading = false;
+
+      if (book != null) {
+        // 解析通过，判定连接成功，写入本地持久化
+        await _storageService.setServerUrl(url);
+        await _storageService.setUsername("RSS免密订阅");
+        await _storageService.setToken("rss_token"); // 写入虚拟 Token 以供自动登录鉴权使用
+        
+        _isAuthenticated = true;
+        _errorMessage = null;
+        notifyListeners();
+        return true;
+      } else {
+        _isAuthenticated = false;
+        _errorMessage = '无法解析此 RSS 订阅源，请检查链接';
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      _isLoading = false;
+      _isAuthenticated = false;
+      _errorMessage = '连接失败: 地址未响应或格式有误';
+      notifyListeners();
+      return false;
+    }
+  }
+
   // 保存自定义 User-Agent
   Future<void> updateCustomUA(String ua) async {
     await _storageService.setCustomUA(ua);

@@ -31,4 +31,8 @@ class StorageService {
     await _prefs.remove(AppConstants.keyToken);
     await _prefs.remove(AppConstants.keyUserId);
   }
+
+  // 保存和读取某本书的播放绝对进度
+  double getBookProgress(String bookId) => _prefs.getDouble('progress_$bookId') ?? 0.0;
+  Future<bool> setBookProgress(String bookId, double value) => _prefs.setDouble('progress_$bookId', value);
 }
