@@ -478,9 +478,13 @@ class ApiService {
       
       // itunes:image 兼容模糊查找
       if (coverUrl == null || coverUrl.isEmpty) {
-        final itunesImage = channel.descendants
-            .whereType<XmlElement>()
-            .firstWhereOrNull((e) => e.name.local == 'image' && e.getAttribute('href') != null);
+        XmlElement? itunesImage;
+        for (final e in channel.descendants.whereType<XmlElement>()) {
+          if (e.name.local == 'image' && e.getAttribute('href') != null) {
+            itunesImage = e;
+            break;
+          }
+        }
         coverUrl = itunesImage?.getAttribute('href');
       }
 
@@ -499,9 +503,13 @@ class ApiService {
         if (audioUrl == null || audioUrl.isEmpty) continue;
 
         // 提取时长 (兼容 itunes:duration，模糊匹配 local 为 duration 的子元素)
-        final durationNode = item.descendants
-            .whereType<XmlElement>()
-            .firstWhereOrNull((e) => e.name.local == 'duration');
+        XmlElement? durationNode;
+        for (final e in item.descendants.whereType<XmlElement>()) {
+          if (e.name.local == 'duration') {
+            durationNode = e;
+            break;
+          }
+        }
         final durationStr = durationNode?.innerText ?? '00:00';
         final durationSeconds = _parseDuration(durationStr);
 
