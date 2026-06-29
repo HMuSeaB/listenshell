@@ -37,6 +37,10 @@ class StorageService {
   double getBookProgress(String bookId) => _prefs.getDouble('progress_$bookId') ?? 0.0;
   Future<bool> setBookProgress(String bookId, double value) => _prefs.setDouble('progress_$bookId', value);
 
+  // 获取和设置 HTTP 代理
+  String? getHttpProxy() => _prefs.getString('http_proxy');
+  Future<bool> setHttpProxy(String value) => _prefs.setString('http_proxy', value);
+
   // 获取服务器历史记录
   List<Map<String, dynamic>> getServerProfiles() {
     final raw = _prefs.getString('server_profiles');

@@ -306,6 +306,7 @@ class _HomeViewState extends State<HomeView> {
     final auth = context.watch<AuthProvider>();
     final colorScheme = Theme.of(context).colorScheme;
     final uaController = TextEditingController(text: auth.customUA);
+    final proxyController = TextEditingController(text: auth.httpProxy ?? '127.0.0.1:7890');
 
     return Scaffold(
       appBar: AppBar(
@@ -366,6 +367,70 @@ class _HomeViewState extends State<HomeView> {
                           uaController.text = AppConstants.defaultUserAgent;
                         },
                         child: const Text('重置为默认 (官方 Android)'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Card(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: colorScheme.outlineVariant.withOpacity(0.3)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '网络代理设置',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    '如果您使用的有声书服务器或 RSS 源需要科学上网，请在下方设置您的本地 HTTP 代理地址。若不输入协议头（如 http://）会自动默认补全。',
+                    style: TextStyle(fontSize: 13, height: 1.4),
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: proxyController,
+                    decoration: const InputDecoration(
+                      labelText: 'HTTP 代理服务器地址',
+                      hintText: '例如: 127.0.0.1:7890 (留空表示直连)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      ElevatedButton(
+                        onPressed: () async {
+                          await auth.updateHttpProxy(proxyController.text.trim());
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('网络代理配置更新成功！')),
+                            );
+                          }
+                        },
+                        child: const Text('保存代理设置'),
+                      ),
+                      const SizedBox(width: 12),
+                      OutlinedButton(
+                        onPressed: () async {
+                          proxyController.clear();
+                          await auth.updateHttpProxy('');
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('已清空代理并切换为直连模式')),
+                            );
+                          }
+                        },
+                        child: const Text('清空并直连'),
                       ),
                     ],
                   ),

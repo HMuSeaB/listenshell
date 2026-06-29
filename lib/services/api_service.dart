@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
+import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:xml/xml.dart';
 import 'storage_service.dart';
 import '../models/book.dart';
@@ -21,6 +23,8 @@ class ApiService {
       connectTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 15),
     ));
+
+    setupProxy(); // 初始化全局代理
 
     // 添加拦截器：自动注入 Bearer Token 和 伪装 User-Agent
     _dio.interceptors.add(InterceptorsWrapper(
@@ -591,6 +595,36 @@ class ApiService {
       return double.parse(durationStr);
     } catch (_) {
       return 300.0; // 解析失败默认设为 5 分钟
+    }
+  }
+
+  // 动态构建和应用 HTTP 全局代理配置
+  void setupProxy() {
+    try {
+      final proxy = _storageService.getHttpProxy();
+      if (proxy != null && proxy.isNotEmpty) {
+        var cleanProxy = proxy.trim();
+        // 自动填充 http 协议头
+        if (!cleanProxy.startsWith('http://') && !cleanProxy.startsWith('https://')) {
+          cleanProxy = 'http://$cleanProxy';
+        }
+        final cleanAddr = cleanProxy.replaceFirst('http://', '').replaceFirst('https://', '');
+        
+        _dio.httpClientAdapter = IOHttpClientAdapter(
+          createHttpClient: () {
+            final client = HttpClient();
+            client.findProxy = (uri) => "PROXY $cleanAddr";
+            client.badCertificateCallback = (cert, host, port) => true;
+            return client;
+          },
+        );
+        LogCollector.instance.log('HTTP 代理应用成功: $cleanProxy');
+      } else {
+        _dio.httpClientAdapter = IOHttpClientAdapter();
+        LogCollector.instance.log('已禁用 HTTP 全局代理');
+      }
+    } catch (e) {
+      LogCollector.instance.log('应用 HTTP 代理发生错误', error: e);
     }
   }
 }

@@ -130,6 +130,16 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 获取当前的代理
+  String? get httpProxy => _storageService.getHttpProxy();
+
+  // 保存和更新 HTTP 全局代理，并实时生效
+  Future<void> updateHttpProxy(String proxy) async {
+    await _storageService.setHttpProxy(proxy);
+    _apiService.setupProxy();
+    notifyListeners();
+  }
+
   // 登出
   Future<void> logout() async {
     await _storageService.clearAuthData();

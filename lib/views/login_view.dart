@@ -19,6 +19,7 @@ class _LoginViewState extends State<LoginView> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _uaController = TextEditingController();
+  final _proxyController = TextEditingController();
 
   int _loginTab = 0; // 0: ABS, 1: RSS, 2: Navidrome
   bool _useHttps = true;
@@ -81,6 +82,9 @@ class _LoginViewState extends State<LoginView> {
       _uaController.text = currentUA;
     }
 
+    // 初始化代理输入，若本地没有保存过，默认预填 127.0.0.1:7890 以便用户一键连接
+    _proxyController.text = auth.httpProxy ?? '127.0.0.1:7890';
+
     // 从存储服务加载历史服务器配置
     final storage = context.read<StorageService>();
     _profiles = storage.getServerProfiles();
@@ -93,6 +97,7 @@ class _LoginViewState extends State<LoginView> {
     _usernameController.dispose();
     _passwordController.dispose();
     _uaController.dispose();
+    _proxyController.dispose();
     super.dispose();
   }
 
@@ -125,6 +130,8 @@ class _LoginViewState extends State<LoginView> {
     
     // 保存 UA
     await auth.updateCustomUA(_uaController.text.trim());
+    // 保存并应用全局代理
+    await auth.updateHttpProxy(_proxyController.text.trim());
 
     final fullUrl = _buildFullUrl();
     
@@ -228,6 +235,7 @@ class _LoginViewState extends State<LoginView> {
       'password': _loginTab == 1 ? '' : _passwordController.text,
       'customUAPreset': _selectedUAPreset,
       'customUA': customUA,
+      'httpProxy': _proxyController.text.trim(),
     };
 
     final existingIdx = _profiles.indexWhere((p) =>
@@ -291,6 +299,7 @@ class _LoginViewState extends State<LoginView> {
         _passwordController.text = p['password'] as String? ?? '';
         _selectedUAPreset = p['customUAPreset'] as String? ?? 'Android';
         _uaController.text = p['customUA'] as String? ?? AppConstants.defaultUserAgent;
+        _proxyController.text = p['httpProxy'] as String? ?? '127.0.0.1:7890';
       });
 
       _handleLogin();
@@ -827,6 +836,17 @@ class _LoginViewState extends State<LoginView> {
                                 ),
                                 validator: (value) =>
                                     (value == null || value.trim().isEmpty) ? 'User-Agent 不能为空' : null,
+                              ),
+                              const SizedBox(height: 16),
+                              TextFormField(
+                                controller: _proxyController,
+                                decoration: const InputDecoration(
+                                  labelText: 'HTTP 代理服务器',
+                                  hintText: '例如: 127.0.0.1:7890 (留空表示直连)',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.network_ping),
+                                  helperText: '若您的服务器或 RSS 源需要科学上网，请输入代理。协议头会自动补充。',
+                                ),
                               ),
                             ],
 
