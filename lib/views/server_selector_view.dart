@@ -104,7 +104,9 @@ class _ServerSelectorViewState extends State<ServerSelectorView> {
   // Profile 操作菜单
   Future<void> _handleProfileAction(String action, Map<String, dynamic> profile, int index) async {
     final storage = context.read<StorageService>();
-    if (action == 'rename') {
+    if (action == 'edit_config') {
+      context.read<AuthProvider>().switchToLogin(profile: profile);
+    } else if (action == 'rename') {
       final controller = TextEditingController(text: profile['name']);
       final newName = await showDialog<String>(
         context: context,
@@ -470,12 +472,22 @@ class _ServerSelectorViewState extends State<ServerSelectorView> {
                 icon: Icon(Icons.more_vert, color: colorScheme.onSurfaceVariant),
                 itemBuilder: (context) => [
                   const PopupMenuItem(
+                    value: 'edit_config',
+                    child: Row(
+                      children: [
+                        Icon(Icons.settings_outlined, size: 18),
+                        SizedBox(width: 8),
+                        Text('编辑配置'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
                     value: 'rename',
                     child: Row(
                       children: [
                         Icon(Icons.edit, size: 18),
                         SizedBox(width: 8),
-                        Text('重命名'),
+                        Text('快速重命名'),
                       ],
                     ),
                   ),

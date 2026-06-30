@@ -17,6 +17,7 @@ class AuthProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   AppView _currentView = AppView.serverSelector;
+  Map<String, dynamic>? _editingProfile;
 
   AuthProvider(this._apiService, this._storageService);
 
@@ -24,6 +25,7 @@ class AuthProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   AppView get currentView => _currentView;
+  Map<String, dynamic>? get editingProfile => _editingProfile;
 
   // 保留旧接口兼容性：home 态即为已认证
   bool get isAuthenticated => _currentView == AppView.home;
@@ -61,8 +63,9 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // 切换到登录页面（用于添加新服务器）
-  void switchToLogin() {
+  // 切换到登录页面（支持传入可选的 profile 以进入编辑模式）
+  void switchToLogin({Map<String, dynamic>? profile}) {
+    _editingProfile = profile;
     _currentView = AppView.login;
     _errorMessage = null;
     notifyListeners();
@@ -83,14 +86,10 @@ class AuthProvider extends ChangeNotifier {
       final customUA = profile['customUA'] as String? ?? '';
       final httpProxy = profile['httpProxy'] as String? ?? '';
 
-      // 先应用 UA 和代理设置
-      if (customUA.isNotEmpty) {
-        await _storageService.setCustomUA(customUA);
-      }
-      if (httpProxy.isNotEmpty) {
-        await _storageService.setHttpProxy(httpProxy);
-        _apiService.setupProxy();
-      }
+      // 先应用 UA 和代理设置 (即使为空也应用覆盖，避免套用上一个连接的配置)
+      await _storageService.setCustomUA(customUA.isNotEmpty ? customUA : 'Audiobookshelf/Android');
+      await _storageService.setHttpProxy(httpProxy);
+      _apiService.setupProxy();
 
       bool success;
       if (type == 1) {

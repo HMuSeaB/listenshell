@@ -124,7 +124,7 @@ class AuthGate extends StatelessWidget {
       case AppView.home:
         return const HomeView();
       case AppView.login:
-        return const LoginView();
+        return LoginView(profileToEdit: auth.editingProfile);
       case AppView.serverSelector:
         return const ServerSelectorView();
     }
